@@ -1,4 +1,7 @@
-#VRML_SIM R2022a utf8
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+
 WorldInfo {
   info [
     "Description"
@@ -8,8 +11,8 @@ WorldInfo {
   basicTimeStep 16
 }
 Viewpoint {
-  orientation 0.42719237579717695 -0.5259825921685602 -0.7354243583104966 4.658012658329193
-  position -1.647231712134905 -7.497887983474179 14.79655946495035
+  orientation 0.4547807917195534 -0.24507719060962804 -0.8562193656568556 4.15214459975116
+  position 1.0980303221247256 -0.5944000886217897 3.4585819019640263
   follow "epuck0"
   followType "None"
 }
