@@ -32,7 +32,7 @@ float loc[FLOCK_SIZE][3];		// Location of everybody in the flock
 #define VERBOSE 1
 
 int offset = 0;		           // Offset of robots number
-float migrx = 0.5; 
+float migrx = 2.39799; 
 float migry = 1.5;			// Migration vector
 float orient_migr; 			// Migration orientation
 int t;

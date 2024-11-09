@@ -54,7 +54,7 @@ float loc[FLOCK_SIZE][3];	// X, Y, Theta of all robots
 float prev_loc[FLOCK_SIZE][3];	// Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2];	// Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE];	// != 0 if initial positions have been received
-float migr[2] = {0.5, 1.5};	                // Migration vector
+float migr[2] = {2.39799, 1.6152};	                // Migration vector
 
 /*
  * Reset the robot's devices and get its ID
