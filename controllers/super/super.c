@@ -28,11 +28,11 @@ float loc[FLOCK_SIZE][3];		// Location of everybody in the flock
 #define RULE1_THRESHOLD 0.2
 #define fit_cluster_ref 0.03
 #define fit_orient_ref 1.0
-#define INTER_VEHICLE_COM 1 // Set 1 if there is intervehicle communication
+#define INTER_VEHICLE_COM 0 // Set 1 if there is intervehicle communication
 #define VERBOSE 1
 
 int offset = 0;		           // Offset of robots number
-float migrx = 2.39799; 
+float migrx = 0.5; 
 float migry = 1.5;			// Migration vector
 float orient_migr; 			// Migration orientation
 int t;

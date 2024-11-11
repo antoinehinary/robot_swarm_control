@@ -18,7 +18,7 @@
 #include <webots/receiver.h>
 
 #define NB_SENSORS	  8	  // Number of distance sensors
-#define MIN_SENS          70     // Minimum sensibility value
+#define MIN_SENS          80     // Minimum sensibility value
 #define MAX_SENS          400    // Maximum sensibility value
 #define MAX_SPEED         800     // Maximum speed
 #define MAX_SPEED_WEB      6.28    // Maximum speed webots
@@ -33,11 +33,11 @@
 #define RULE2_THRESHOLD     0.15   // Threshold to activate dispersion rule. default 0.15
 #define RULE2_WEIGHT        (0.02/10)	   // Weight of dispersion rule. default 0.02/10
 #define RULE3_WEIGHT        (1.0/10)   // Weight of alignment rule. default 1.0/10
-#define MIGRATION_WEIGHT    (0.04/10)   // Wheight of attraction towards the common goal. default 0.01/10
+#define MIGRATION_WEIGHT    (0.4/10)   // Wheight of attraction towards the common goal. default 0.01/10
 #define MIGRATORY_URGE 1 // Tells the robots if they should just go forward or move towards a specific migratory direction
 #define NEIGHBOURHOOD 1 // Tells the robot considering neighbors or all robots during flocking
-#define NEIGH_THRESHOLD 0.6 // Threshold to consider neighbourhood
-#define INTER_VEHICLE_COM 1 // Set 1 if there is intervehicle communication
+#define NEIGH_THRESHOLD 0.4 // Threshold to consider neighbourhood
+#define INTER_VEHICLE_COM 0 // Set 1 if there is intervehicle communication
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
 
@@ -47,14 +47,14 @@ WbDeviceTag ds[NB_SENSORS];	// Handle for the infrared distance sensors
 WbDeviceTag receiver;		// Handle for the receiver node
 WbDeviceTag emitter;		// Handle for the emitter node
 
-int e_puck_matrix[16] = {40,20,10,0,0,-10,-20,-40,-40,-20,-10,0,0,10,20,40}; // Maze
+int e_puck_matrix[16] = {45,30,20,0,0,-20,-30,-45,-45,-30,-20,0,0,20,30,45}; // Custom
 //int e_puck_matrix[16] = {17,29,12,10,8,-38,-56,-76,-72,-58,-36,8,10,12,28,18}; // Crossing
 int robot_id_u, robot_id;	// Unique and normalized (between 0 and FLOCK_SIZE-1), robot ID
 float loc[FLOCK_SIZE][3];	// X, Y, Theta of all robots
 float prev_loc[FLOCK_SIZE][3];	// Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2];	// Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE];	// != 0 if initial positions have been received
-float migr[2] = {2.39799, 1.6152};	                // Migration vector
+float migr[2] = {0.5, 1.5};	                // Migration vector
 
 /*
  * Reset the robot's devices and get its ID
@@ -428,7 +428,7 @@ int main(){
 	// Compute wheels speed from Reynold's speed
 	compute_wheel_speeds(&msl, &msr);
 
-		// Adapt speed instinct to distance sensor values
+	// Adapt speed instinct to distance sensor values
 	if (sum_sensors > NB_SENSORS*MIN_SENS) {
 		msl -= msl*max_sens/(2*MAX_SENS);
 		msr -= msr*max_sens/(2*MAX_SENS);
@@ -452,6 +452,9 @@ int main(){
 	// 	printf("Robot id : %d, Obstacle Speed right: %d, ObstacleSpeed left: %d\n",robot_id, bmsr, bmsl);
 	// 	printf("Robot id : %d, Sent Speed right: %f, Sent left: %f\n",robot_id, msr_w, msl_w);
 	// }
+
+	limitf(&msl_w, MAX_SPEED_WEB);
+	limitf(&msr_w, MAX_SPEED_WEB);
 
 	wb_motor_set_velocity(left_motor, msl_w);
 	wb_motor_set_velocity(right_motor, msr_w);
