@@ -461,9 +461,8 @@ int main(){
 
 	// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
 	/*Implement your code here*/
-	
 	if (INTER_VEHICLE_COM) {
-        	     sprintf(outbuffer,"%1d#%f#%f#%f",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2]);
+        	    sprintf(outbuffer,"%1d#%f#%f#%f",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2]);
                 wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
            }
 
