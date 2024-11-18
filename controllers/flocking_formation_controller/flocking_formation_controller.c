@@ -1,11 +1,11 @@
 /*****************************************************************************/
-/* File:         flocking_formation_controller.c                                                  */
+/* File:         flocking_formation_controller.c                             */
 /* Version:      1.0                                                         */
 /* Date:         8-Nov-24                                                    */
-/* Description:  Reynolds flocking control 				*/
+/* Description:  Reynolds flocking control                                   */
 /*                                                                           */
-/* Author:       8-Nov-24 by Antoine Hinary			           */
-/* Last revision: 		*/
+/* Author:       8-Nov-24 by Antoine Hinary                                  */
+/* Last revision:                                                            */
 /*****************************************************************************/
 
 #include <stdio.h>
@@ -17,85 +17,169 @@
 #include <webots/emitter.h>
 #include <webots/receiver.h>
 
-#define NB_SENSORS	  8	  // Number of distance sensors
-#define MIN_SENS          60     // Minimum sensibility value
-#define MAX_SENS          300    // Maximum sensibility value
-#define MAX_SPEED         800     // Maximum speed
-#define MAX_SPEED_WEB      6.28    // Maximum speed webots
-#define FLOCK_SIZE	  5	  // Size of flock
-#define TIME_STEP	  64	  // [ms] Length of time step
-#define AXLE_LENGTH 		0.052	// Distance between wheels of robot (meters)
-#define SPEED_UNIT_RADS		0.00628	// Conversion factor from speed unit to radian per second
-#define WHEEL_RADIUS		0.0205	// Wheel radius (meters)
-#define DELTA_T			0.064	// Timestep (seconds)
-#define RULE1_THRESHOLD     0.20   // Threshold to activate aggregation rule. default 0.20
-#define RULE1_WEIGHT        (0.7/10)	   // Weight of aggregation rule. default 0.6/10
-#define RULE2_THRESHOLD     0.15   // Threshold to activate dispersion rule. default 0.15
-#define RULE2_WEIGHT        (0.02/10)	   // Weight of dispersion rule. default 0.02/10
-#define RULE3_WEIGHT        (1.0/10)   // Weight of alignment rule. default 1.0/10
-#define MIGRATION_WEIGHT    (0.02/10)   // Wheight of attraction towards the common goal. default 0.01/10
-#define MIGRATORY_URGE 1 // Tells the robots if they should just go forward or move towards a specific migratory direction
-#define NEIGHBOURHOOD 1 // Tells the robot considering neighbors or all robots during flocking
-#define NEIGH_THRESHOLD 0.5 // Threshold to consider neighbourhood
-#define INTER_VEHICLE_COM 0 // Set 1 if there is intervehicle communication
+#define NB_SENSORS      8       // Number of distance sensors
+#define MIN_SENS        60      // Minimum sensibility value
+#define MAX_SENS        250     // Maximum sensibility value
+#define MAX_SPEED       800     // Maximum speed
+#define MAX_SPEED_WEB   6.28    // Maximum speed webots
+#define FLOCK_SIZE      5       // Size of flock
+#define TIME_STEP       64      // [ms] Length of time step
+#define AXLE_LENGTH     0.052   // Distance between wheels of robot (meters)
+#define SPEED_UNIT_RADS 0.00628 // Conversion factor from speed unit to radian per second
+#define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
+#define DELTA_T         0.064   // Timestep (seconds)
+#define RULE1_THRESHOLD 0.20    // Threshold to activate aggregation rule. default 0.20
+#define RULE1_WEIGHT    (0.7/10)// Weight of aggregation rule. default 0.6/10
+#define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
+#define RULE2_WEIGHT    (0.02/10)// Weight of dispersion rule. default 0.02/10
+#define RULE3_WEIGHT    (1.0/10)// Weight of alignment rule. default 1.0/10
+#define MIGRATION_WEIGHT (0.03/10)// Wheight of attraction towards the common goal. default 0.01/10
+#define MIGRATORY_URGE 1         // Tells the robots if they should just go forward or move towards a specific migratory direction
+#define NEIGHBOURHOOD 1          // Tells the robot considering neighbors or all robots during flocking
+#define NEIGH_THRESHOLD 0.5      // Threshold to consider neighbourhood
+#define INTER_VEHICLE_COM 0      // Set 1 if there is intervehicle communication
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
 
 WbDeviceTag left_motor; //handler for left wheel of the robot
 WbDeviceTag right_motor; //handler for the right wheel of the robot
-WbDeviceTag ds[NB_SENSORS];	// Handle for the infrared distance sensors
-WbDeviceTag receiver;		// Handle for the receiver node
-WbDeviceTag emitter;		// Handle for the emitter node
+WbDeviceTag ds[NB_SENSORS]; // Handle for the infrared distance sensors
+WbDeviceTag receiver;     // Handle for the receiver node
+WbDeviceTag emitter;      // Handle for the emitter node
 
 int e_puck_matrix[16] = {50,35,20,0,0,-20,-35,-45,-45,-35,-20,0,0,20,35,50}; // Custom
-//int e_puck_matrix[16] = {17,29,12,10,8,-38,-56,-76,-72,-58,-36,8,10,12,28,18}; // Crossing
-int robot_id_u, robot_id;	// Unique and normalized (between 0 and FLOCK_SIZE-1), robot ID
-float loc[FLOCK_SIZE][3];	// X, Y, Theta of all robots
-float prev_loc[FLOCK_SIZE][3];	// Previous X, Y, Theta values
-float speed[FLOCK_SIZE][2];	// Speeds calculated with Reynold's rules
-int initialized[FLOCK_SIZE];	// != 0 if initial positions have been received
-float migr[2] = {0.8, 1.6};	                // Migration vector
+int robot_id_u, robot_id; // Unique and normalized (between 0 and FLOCK_SIZE-1), robot ID
+float loc[FLOCK_SIZE][3]; // X, Y, Theta of all robots
+float prev_loc[FLOCK_SIZE][3]; // Previous X, Y, Theta values
+float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
+int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
+float migr[2] = {0.8, 1.6}; // Migration vector
 
 /*
  * Reset the robot's devices and get its ID
  *
  */
 static void reset() {
-	
-	wb_robot_init();
+    wb_robot_init();
 
-	receiver = wb_robot_get_device("receiver");
-	emitter = wb_robot_get_device("emitter");
-	
-	//get motors
-	left_motor = wb_robot_get_device("left wheel motor");
-	right_motor = wb_robot_get_device("right wheel motor");
-	wb_motor_set_position(left_motor, INFINITY);
-	wb_motor_set_position(right_motor, INFINITY);
+    receiver = wb_robot_get_device("receiver");
+    emitter = wb_robot_get_device("emitter");
 
-	int i;
-	char s[4]="ps0";
-	for(i=0; i<NB_SENSORS;i++) {
-		ds[i]=wb_robot_get_device(s);	// the device name is specified in the world file
-		s[2]++;				// increases the device number
-	}
-	char* robot_name; 
-	robot_name=(char*) wb_robot_get_name(); 
+    //get motors
+    left_motor = wb_robot_get_device("left wheel motor");
+    right_motor = wb_robot_get_device("right wheel motor");
+    wb_motor_set_position(left_motor, INFINITY);
+    wb_motor_set_position(right_motor, INFINITY);
 
-	for(i=0;i<NB_SENSORS;i++) {
-		wb_distance_sensor_enable(ds[i],64);
-	}
-	wb_receiver_enable(receiver,64);
+    int i;
+    char s[4] = "ps0";
+    for (i = 0; i < NB_SENSORS; i++) {
+        ds[i] = wb_robot_get_device(s); // the device name is specified in the world file
+        s[2]++;                         // increases the device number
+    }
+    char* robot_name;
+    robot_name = (char*) wb_robot_get_name();
 
-	//Reading the robot's name. Pay attention to name specification when adding robots to the simulation!
-	sscanf(robot_name,"epuck%d",&robot_id_u); // read robot id from the robot's name
-	robot_id = robot_id_u%FLOCK_SIZE;	  // normalize between 0 and FLOCK_SIZE-1
+    for (i = 0; i < NB_SENSORS; i++) {
+        wb_distance_sensor_enable(ds[i], 64);
+    }
+    wb_receiver_enable(receiver, 64);
 
-	for(i=0; i<FLOCK_SIZE; i++) {
-		initialized[i] = 0; 		  // Set initialization to 0 (= not yet initialized)
-	}
+    // Reading the robot's name. Pay attention to name specification when adding robots to the simulation!
+    sscanf(robot_name, "epuck%d", &robot_id_u); // read robot id from the robot's name
+    robot_id = robot_id_u % FLOCK_SIZE;        // normalize between 0 and FLOCK_SIZE-1
 
-	printf("Reset: robot %d\n",robot_id_u);
+    for (i = 0; i < FLOCK_SIZE; i++) {
+        initialized[i] = 0; // Set initialization to 0 (= not yet initialized)
+    }
+
+    printf("Reset: robot %d\n", robot_id_u);
+}
+
+/*
+ * Update speed according to Reynold's rules
+ */
+void reynolds_rules() {
+    int i, j, k;            // Loop counters
+    float avg_loc[2] = {0, 0}; // Flock average positions
+    float avg_speed[2] = {0, 0}; // Flock average speeds
+    float cohesion[2] = {0, 0};
+    float dispersion[2] = {0, 0};
+    float alignment[2] = {0, 0};
+    float dist; // Use it to define distance between robots
+    float n_robots; // Use to assign initial number of robots
+
+    dist = 0;
+    n_robots = 1;
+
+    #ifdef NEIGHBOURHOOD
+    for (i = 0; i < FLOCK_SIZE; i++) {
+        if (i == robot_id) {
+            continue; // Skip self
+        }
+        dist = sqrt(pow(loc[i][0] - loc[robot_id][0], 2.0) + pow(loc[i][1] - loc[robot_id][1], 2.0));
+        if (dist < NEIGH_THRESHOLD) {
+            for (j = 0; j < 2; j++) {
+                avg_speed[j] += speed[i][j];
+                avg_loc[j] += loc[i][j];
+            }
+            n_robots++;
+        }
+    }
+    for (j = 0; j < 2; j++) {
+        avg_speed[j] /= n_robots - 1;
+        avg_loc[j] /= n_robots - 1;
+    }
+    #else
+    for (i = 0; i < FLOCK_SIZE; i++) {
+        if (i == robot_id) {
+            continue; // Skip self
+        }
+        for (j = 0; j < 2; j++) {
+            avg_speed[j] += speed[i][j];
+            avg_loc[j] += loc[i][j];
+        }
+    }
+    for (j = 0; j < 2; j++) {
+        avg_speed[j] /= FLOCK_SIZE - 1;
+        avg_loc[j] /= FLOCK_SIZE - 1;
+    }
+    #endif
+
+    /* Reynold's rules */
+    // Rule 1 - Cohesion
+    for (j = 0; j < 2; j++) {
+        if (sqrt(pow(loc[robot_id][0] - avg_loc[0], 2) + pow(loc[robot_id][1] - avg_loc[1], 2)) > RULE1_THRESHOLD) {
+            cohesion[j] = avg_loc[j] - loc[robot_id][j];
+        }
+    }
+
+    // Rule 2 - Dispersion
+    for (k = 0; k < FLOCK_SIZE; k++) {
+        if (k != robot_id) {
+            if (pow(loc[robot_id][0] - loc[k][0], 2) + pow(loc[robot_id][1] - loc[k][1], 2) < RULE2_THRESHOLD) {
+                for (j = 0; j < 2; j++) {
+                    dispersion[j] += 1 / (loc[robot_id][j] - loc[k][j]);
+                }
+            }
+        }
+    }
+
+    // Rule 3 - Alignment
+    for (j = 0; j < 2; j++) {
+        alignment[j] = avg_speed[j] - speed[robot_id][j];
+    }
+
+    for (j = 0; j < 2; j++) {
+        speed[robot_id][j] = cohesion[j] * RULE1_WEIGHT;
+        speed[robot_id][j] += dispersion[j] * RULE2_WEIGHT;
+        speed[robot_id][j] += alignment[j] * RULE3_WEIGHT;
+    }
+
+    #ifdef MIGRATORY_URGE
+    speed[robot_id][0] += MIGRATION_WEIGHT * (migr[0] - loc[robot_id][0]);
+    speed[robot_id][1] += MIGRATION_WEIGHT * (migr[1] - loc[robot_id][1]);
+    #endif
 }
 
 /*
@@ -179,126 +263,6 @@ void compute_wheel_speeds(int *msl, int *msr)
 }
 
 /*
- * Update speed according to Reynold's rules
- */
-
-void reynolds_rules() {
-
-	int i, j, k;			// Loop counters
-	float avg_loc[2] = {0,0};	// Flock average positions
-	float avg_speed[2] = {0,0};	// Flock average speeds
-	float cohesion[2] = {0,0};
-	float dispersion[2] = {0,0};
-	float alignment[2] = {0,0};
-	float dist; // Use it to define distance between robots
-	float n_robots; // Use to assign initial number of robots
-	
-	dist = 0;
-	n_robots = 1;
-	
-	if (NEIGHBOURHOOD) {
-
-		for(i=0; i<FLOCK_SIZE; i++) {
-			if (i == robot_id) {	
-          			// don't consider yourself for the average 
-				continue;
-			}
-			dist = sqrt(pow(loc[i][0]-loc[robot_id][0],2.0)+pow(loc[i][1]-loc[robot_id][1],2.0));
-			if (dist < NEIGH_THRESHOLD){
-				for (j=0;j<2;j++) {      		         
-					avg_speed[j] += speed[i][j];
-					avg_loc[j] += loc[i][j];
-				}
-				n_robots= n_robots+1;
-			}	
-		}
-
-		for (j=0;j<2;j++) {
-			if (n_robots >1){
-				avg_speed[j] /= (n_robots-1);
-				avg_loc[j] /= (n_robots-1) ;
-			}
-			else{
-				avg_speed[j] = speed[robot_id][j];
-				avg_loc[j] = loc[robot_id][j];
-			}
-		}
-
-	} else {
-	/* Compute averages over the whole flock */
-		for(i=0; i<FLOCK_SIZE; i++) {
-			if (i == robot_id) {	
-          			// don't consider yourself for the average 
-				continue;
-			}
-			for (j=0;j<2;j++) {
-				avg_speed[j] += speed[i][j];
-				avg_loc[j] += loc[i][j];
-			}
-		}
-
-		for (j=0;j<2;j++) {
-			avg_speed[j] /= FLOCK_SIZE-1;
-			avg_loc[j] /= FLOCK_SIZE-1;
-		}
-	}
-	
-	/* Reynold's rules */
-	
-	/* Rule 1 - Aggregation/Cohesion: move towards the center of mass */
-	for (j=0;j<2;j++) {
-		// If center of mass is too far
-		if (sqrt(pow(loc[robot_id][0]-avg_loc[0],2)+pow(loc[robot_id][1]-avg_loc[1],2)) > RULE1_THRESHOLD) {
-         		cohesion[j] = avg_loc[j] - loc[robot_id][j];   // Relative distance to the center of the swarm
-         	}
-         }
-
-
-
-	/* Rule 2 - Dispersion/Separation: keep far enough from flockmates */
-         for (k=0;k<FLOCK_SIZE;k++) {
-		if (k != robot_id) {        // Loop on flockmates only
-			// If neighbor k is too close (Euclidean distance)
-			if (pow(loc[robot_id][0]-loc[k][0],2)+pow(loc[robot_id][1]-loc[k][1],2) < RULE2_THRESHOLD) {
-				for (j=0;j<2;j++) {
-					dispersion[j] += 1/(loc[robot_id][j] -loc[k][j]);	// Relative distance to k
-				}
-			}
-		}
-	}
-
-	/* Rule 3 - Alignment: match the speeds of flockmates */
-	alignment[0] = 0;
-	alignment[1] = 0;
-	
-	/* add code for alignment[j]*/
-	for (j=0;j<2;j++) {
-		alignment[j] = avg_speed[j] - speed[robot_id][j];
-	}
-
-	if (VERBOSE) {
-             printf("id = %d, coh_x:%f coh_y:%f, dis_x:%f dis_y:%f, align_x:%f align_y:%f\n", robot_id, cohesion[0], cohesion[1], dispersion[0], dispersion[1], alignment[0], alignment[1]);
-	}
-	
-	for (j=0;j<2;j++) {
-		speed[robot_id][j] = cohesion[j] * RULE1_WEIGHT;
-		speed[robot_id][j] +=  dispersion[j] * RULE2_WEIGHT;
-		speed[robot_id][j] +=  alignment[j] * RULE3_WEIGHT;
-	}
-	
-	//move the robot according to some migration rule
-	if(MIGRATORY_URGE == 0){
-		speed[robot_id][0] += 0*0.01*cos(loc[robot_id][2] + M_PI/2);
-		speed[robot_id][1] += 0*0.01*sin(loc[robot_id][2] + M_PI/2);
-	} else {
-		/* Implement migratory urge */
-		speed[robot_id][0] += MIGRATION_WEIGHT*(migr[0]-loc[robot_id][0]);
-		speed[robot_id][1] += MIGRATION_WEIGHT*(migr[1]-loc[robot_id][1]); 
-		printf("Robot id %d has speed right : %f and speed left %f \n", robot_id, MIGRATION_WEIGHT*(migr[0]-loc[robot_id][0]), MIGRATION_WEIGHT*(migr[1]-loc[robot_id][1]));
-	}
-}
-
-/*
  * Initialize robot's position
  */
 void initial_pos(void){
@@ -328,8 +292,6 @@ void initial_pos(void){
 		}		
 		wb_receiver_next_packet(receiver);
 	}
-	
-	
 }
 
 /*
