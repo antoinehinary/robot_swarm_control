@@ -9,7 +9,6 @@
 #include <stdio.h>
 // #include <string.h>
 
-
 #include <webots/robot.h>
 #include <webots/emitter.h>
 #include <webots/supervisor.h>
@@ -27,7 +26,6 @@ WbDeviceTag emitter;			// Single emitter
 float loc[FLOCK_SIZE][3];		// Location of everybody in the flock
 
 int t = 0;
-
 
 
 // sign function 
@@ -62,31 +60,34 @@ void reset(void) {
 
 int main(int argc, char *argv[]) {
 
-  // controller initialization
-  reset(); 
+  	// controller initialization
+  	reset(); 
 
-  int i;
-	for(;;) {
+  	int i;
+
+	for(;;) { // Main endless control loop
 		wb_robot_step(TIME_STEP);
 		
-		if (t % 10 == 0) {
-			for (i=0;i<FLOCK_SIZE;i++) {
-				// Get data
-				loc[i][0] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[0]; // X
-				loc[i][1] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[1]; // Y
-				loc[i][2] = wb_supervisor_field_get_sf_rotation(robs_rotation[i])[3]*sign(wb_supervisor_field_get_sf_rotation(robs_rotation[i])[2]);; // THETA			
-			}
+		// if (t % 10 == 0) {
+		// 	for (i=0;i<FLOCK_SIZE;i++) {
+		// 		// Get data
+		// 		loc[i][0] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[0]; // X
+		// 		loc[i][1] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[1]; // Y
+		// 		loc[i][2] = wb_supervisor_field_get_sf_rotation(robs_rotation[i])[3]*sign(wb_supervisor_field_get_sf_rotation(robs_rotation[i])[2]);; // THETA			
+		// 	}
 			
-			if (VERBOSE) {
-        for (i=0;i<FLOCK_SIZE;i++) {
-          printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2]);
-        }
-			}			
-		}
+			// if (VERBOSE) {
+			// 	for (i=0;i<FLOCK_SIZE;i++) {
+			// 	// printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2]);
+
+			// 	sprintf(buffer,"%1d#%f#%f#%f",i+offset,loc[i][0],loc[i][1],loc[i][2]);
+            // 	wb_emitter_send(emitter,buffer,strlen(buffer));
+			// 	}
+				
+			// }			
+		// }
 		t += TIME_STEP;
 	}
-
-
 
   return 0;
 }
