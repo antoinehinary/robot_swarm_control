@@ -277,23 +277,23 @@ void compute_wheel_speeds(int *msl, int *msr)
 void update_position() {
     const double *gps_values = wb_gps_get_values(gps);
 
-#ifdef USE_IMU
-    const double *imu_values = wb_inertial_unit_get_roll_pitch_yaw(imu);
+    #ifdef USE_IMU
+        const double *imu_values = wb_inertial_unit_get_roll_pitch_yaw(imu);
 
-    // Update position with IMU
-    loc[robot_id][0] = gps_values[0];
-    loc[robot_id][1] = gps_values[1];
-    loc[robot_id][2] = imu_values[2]; // Use yaw from IMU
-#else
-    // Alternative method: estimate angle using odometry
-    float dx = gps_values[0] - prev_loc[robot_id][0];
-    float dy = gps_values[1] - prev_loc[robot_id][1];
-    loc[robot_id][2] = atan2(dy, dx); // Compute angle based on movement
+        // Update position with IMU
+        loc[robot_id][0] = gps_values[0];
+        loc[robot_id][1] = gps_values[1];
+        loc[robot_id][2] = imu_values[2]; // Use yaw from IMU
+    #else
+        // Alternative method: estimate angle using odometry
+        float dx = gps_values[0] - prev_loc[robot_id][0];
+        float dy = gps_values[1] - prev_loc[robot_id][1];
+        loc[robot_id][2] = atan2(dy, dx); // Compute angle based on movement
 
-    // Update position
-    loc[robot_id][0] = gps_values[0];
-    loc[robot_id][1] = gps_values[1];
-#endif
+        // Update position
+        loc[robot_id][0] = gps_values[0];
+        loc[robot_id][1] = gps_values[1];
+    #endif
 
     // Normalize orientation to [0, 2*PI]
     if (loc[robot_id][2] > 2 * M_PI)
@@ -301,8 +301,8 @@ void update_position() {
     if (loc[robot_id][2] < 0)
         loc[robot_id][2] += 2 * M_PI;
 
-    printf("Robot %d position updated to (%f, %f, %f)\n",
-           robot_id, loc[robot_id][0], loc[robot_id][1], loc[robot_id][2]);
+    // printf("Robot %d position updated to (%f, %f, %f)\n",
+    //        robot_id, loc[robot_id][0], loc[robot_id][1], loc[robot_id][2]);
 }
 
 
@@ -325,7 +325,7 @@ void initial_pos(void){
 		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
 		// Only info about self will be taken into account at first.
 
-        // robot_nb %= FLOCK_SIZE;
+    // robot_nb %= FLOCK_SIZE;
 		if (rob_nb == robot_id) {
 			// Initialize self position
 			loc[rob_nb][0] = rob_x; 		// x-position
@@ -401,7 +401,7 @@ int main(){
 				initialized[rob_nb] = 1;
 			} else {
 				// Get position update
-				// printf("\n got update robot[%d] = (%f,%f) \n",rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
+				printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
 				prev_loc[rob_nb][0] = loc[rob_nb][0];
 				prev_loc[rob_nb][1] = loc[rob_nb][1];
 				loc[rob_nb][0] = rob_x; //x-position

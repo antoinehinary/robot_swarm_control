@@ -62,7 +62,7 @@ void reset(void) {
     }
 
     // Write CSV header
-    fprintf(csv_file, "Time,o[t],d[t],v[t],M_fl[t],x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4,x_5,y_5,\n");
+    fprintf(csv_file, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4\n");
 }
 
 /*
@@ -106,7 +106,7 @@ float calculate_velocity() {
         float proj_migr = (vx * migrx + vy * migry) / sqrtf(migrx * migrx + migry * migry);
         v_t += fmax(proj_migr, 0);
     }
-    return v_t / (FLOCK_SIZE * V_MAX);
+    return v_t / V_MAX;
 }
 
 /*
