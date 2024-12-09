@@ -16,6 +16,9 @@
 #include <webots/distance_sensor.h>
 #include <webots/emitter.h>
 #include <webots/receiver.h>
+#include <webots/gyro.h>
+#include <webots/gps.h>
+#include <webots/inertial_unit.h>
 
 #define NB_SENSORS      8       // Number of distance sensors
 #define MIN_SENS        60      // Minimum sensibility value
@@ -28,24 +31,28 @@
 #define SPEED_UNIT_RADS 0.00628 // Conversion factor from speed unit to radian per second
 #define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
 #define DELTA_T         0.064   // Timestep (seconds)
-#define RULE1_THRESHOLD 0.20    // Threshold to activate aggregation rule. default 0.20
-#define RULE1_WEIGHT    (0.7/10)// Weight of aggregation rule. default 0.6/10
+#define RULE1_THRESHOLD 0.25    // Threshold to activate aggregation rule. default 0.20
+#define RULE1_WEIGHT    (0.6/10)// Weight of aggregation rule. default 0.6/10
 #define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
 #define RULE2_WEIGHT    (0.02/10)// Weight of dispersion rule. default 0.02/10
 #define RULE3_WEIGHT    (1.0/10)// Weight of alignment rule. default 1.0/10
-#define MIGRATION_WEIGHT (0.03/10)// Wheight of attraction towards the common goal. default 0.01/10
+#define MIGRATION_WEIGHT (0.01/10)// Wheight of attraction towards the common goal. default 0.01/10
 #define MIGRATORY_URGE 1         // Tells the robots if they should just go forward or move towards a specific migratory direction
 #define NEIGHBOURHOOD 1          // Tells the robot considering neighbors or all robots during flocking
 #define NEIGH_THRESHOLD 0.5      // Threshold to consider neighbourhood
-#define INTER_VEHICLE_COM 0      // Set 1 if there is intervehicle communication
+#define INTER_VEHICLE_COM 1      // Set 1 if there is intervehicle communication
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
+
+#define USE_IMU
 
 WbDeviceTag left_motor; //handler for left wheel of the robot
 WbDeviceTag right_motor; //handler for the right wheel of the robot
 WbDeviceTag ds[NB_SENSORS]; // Handle for the infrared distance sensors
 WbDeviceTag receiver;     // Handle for the receiver node
 WbDeviceTag emitter;      // Handle for the emitter node
+WbDeviceTag gps;      // Handle for the gps node
+WbDeviceTag imu;      // Handle for the imu node
 
 int e_puck_matrix[16] = {50,35,20,0,0,-20,-35,-45,-45,-35,-20,0,0,20,35,50}; // Custom
 int robot_id_u, robot_id; // Unique and normalized (between 0 and FLOCK_SIZE-1), robot ID
@@ -54,6 +61,7 @@ float prev_loc[FLOCK_SIZE][3]; // Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
+double z_ang_vel;
 
 /*
  * Reset the robot's devices and get its ID
@@ -64,6 +72,10 @@ static void reset() {
 
     receiver = wb_robot_get_device("receiver");
     emitter = wb_robot_get_device("emitter");
+    gps = wb_robot_get_device("gps");
+    imu = wb_robot_get_device("inertial_unit");
+    wb_gps_enable(gps, TIME_STEP);
+    wb_inertial_unit_enable(imu, TIME_STEP);
 
     //get motors
     left_motor = wb_robot_get_device("left wheel motor");
@@ -185,7 +197,7 @@ void reynolds_rules() {
 /*
  * Keep given float number within interval {-limit, limit}
  */
-void limitf(float *number, int limit) {
+void limitf(float *number, double limit) {
 
 	if (*number > limit)
 		*number = (float)limit;
@@ -261,6 +273,39 @@ void compute_wheel_speeds(int *msl, int *msr)
 	// printf("bearing: %f, range: %f\n",bearing * (180.0 / M_PI), range);
 
 }
+
+void update_position() {
+    const double *gps_values = wb_gps_get_values(gps);
+
+#ifdef USE_IMU
+    const double *imu_values = wb_inertial_unit_get_roll_pitch_yaw(imu);
+
+    // Update position with IMU
+    loc[robot_id][0] = gps_values[0];
+    loc[robot_id][1] = gps_values[1];
+    loc[robot_id][2] = imu_values[2]; // Use yaw from IMU
+#else
+    // Alternative method: estimate angle using odometry
+    float dx = gps_values[0] - prev_loc[robot_id][0];
+    float dy = gps_values[1] - prev_loc[robot_id][1];
+    loc[robot_id][2] = atan2(dy, dx); // Compute angle based on movement
+
+    // Update position
+    loc[robot_id][0] = gps_values[0];
+    loc[robot_id][1] = gps_values[1];
+#endif
+
+    // Normalize orientation to [0, 2*PI]
+    if (loc[robot_id][2] > 2 * M_PI)
+        loc[robot_id][2] -= 2 * M_PI;
+    if (loc[robot_id][2] < 0)
+        loc[robot_id][2] += 2 * M_PI;
+
+    printf("Robot %d position updated to (%f, %f, %f)\n",
+           robot_id, loc[robot_id][0], loc[robot_id][1], loc[robot_id][2]);
+}
+
+
 
 /*
  * Initialize robot's position
@@ -345,9 +390,8 @@ int main(){
 			inbuffer = (char*) wb_receiver_get_data(receiver);
 			sscanf(inbuffer,"%d#%f#%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta);
 			
-			if ((int) rob_nb/FLOCK_SIZE == (int) robot_id/FLOCK_SIZE) {
-				rob_nb %= FLOCK_SIZE;
-				if (initialized[rob_nb] == 0) {
+      rob_nb %= FLOCK_SIZE;
+      if (initialized[rob_nb] == 0) {
 				// Get initial positions
 				loc[rob_nb][0] = rob_x; //x-position
 				loc[rob_nb][1] = rob_y; //y-position
@@ -368,7 +412,6 @@ int main(){
 			speed[rob_nb][0] = (1/DELTA_T)*(loc[rob_nb][0]-prev_loc[rob_nb][0]);
 			speed[rob_nb][1] = (1/DELTA_T)*(loc[rob_nb][1]-prev_loc[rob_nb][1]);
 			count++;
-		}
 
 		wb_receiver_next_packet(receiver);
 	}
@@ -377,6 +420,7 @@ int main(){
 	prev_loc[robot_id][0] = loc[robot_id][0];
 	prev_loc[robot_id][1] = loc[robot_id][1];
 
+  update_position();
 
 	update_self_motion(msl,msr);
 
@@ -403,17 +447,6 @@ int main(){
 	msl_w = msl*MAX_SPEED_WEB/1000;
 	msr_w = msr*MAX_SPEED_WEB/1000;
 
-	// if(robot_id==2)
-	// {
-	// 	for(int i=0; i<NB_SENSORS; i++)
-	// 	{
-	// 		printf("Sensor %d has value : %d \n", i, distances[i]);
-	// 	}
-	// 	printf("Robot id : %d, Speed right: %d, Speed left: %d\n",robot_id, msr, msl);
-	// 	printf("Robot id : %d, Obstacle Speed right: %d, ObstacleSpeed left: %d\n",robot_id, bmsr, bmsl);
-	// 	printf("Robot id : %d, Sent Speed right: %f, Sent left: %f\n",robot_id, msr_w, msl_w);
-	// }
-
 	limitf(&msl_w, MAX_SPEED_WEB);
 	limitf(&msr_w, MAX_SPEED_WEB);
 
@@ -426,6 +459,7 @@ int main(){
         	    sprintf(outbuffer,"%1d#%f#%f#%f",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2]);
                 wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
            }
+
 
 	// Continue one step
 	wb_robot_step(TIME_STEP);

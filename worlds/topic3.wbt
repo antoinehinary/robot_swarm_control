@@ -1,7 +1,4 @@
-#VRML_SIM R2023b utf8
-
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/gctronic/e-puck/protos/E-puck.proto"
-
+#VRML_SIM R2022a utf8
 WorldInfo {
   info [
     "Description"
@@ -11,8 +8,8 @@ WorldInfo {
   basicTimeStep 16
 }
 Viewpoint {
-  orientation 0.5320389598016807 -0.1711646728380836 -0.8292389281898055 3.7854288686733186
-  position 1.1721028338395565 0.7707523972383327 3.5088322353828136
+  orientation 0.42719237579717695 -0.5259825921685602 -0.7354243583104966 4.658012658329193
+  position -1.647231712134905 -7.497887983474179 14.79655946495035
   follow "epuck0"
   followType "None"
 }
@@ -685,6 +682,9 @@ DEF epuck0 E-puck {
     GPS {
       translation -0.03 0 0
     }
+     InertialUnit {
+      name "inertial_unit"
+    }
   ]
 }
 DEF epuck1 E-puck {
@@ -696,6 +696,9 @@ DEF epuck1 E-puck {
   groundSensorsSlot [
     GPS {
       translation -0.03 0 0
+    }
+     InertialUnit {
+      name "inertial_unit"
     }
   ]
 }
@@ -709,6 +712,9 @@ DEF epuck2 E-puck {
     GPS {
       translation -0.03 0 0
     }
+     InertialUnit {
+      name "inertial_unit"
+    }
   ]
 }
 DEF epuck3 E-puck {
@@ -721,6 +727,9 @@ DEF epuck3 E-puck {
     GPS {
       translation -0.03 0 0
     }
+     InertialUnit {
+      name "inertial_unit"
+    }
   ]
 }
 DEF epuck4 E-puck {
@@ -732,6 +741,9 @@ DEF epuck4 E-puck {
   groundSensorsSlot [
     GPS {
       translation -0.03 0 0
+    }
+     InertialUnit {
+      name "inertial_unit"
     }
   ]
 }
