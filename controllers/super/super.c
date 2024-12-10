@@ -76,17 +76,18 @@ int main(int argc, char *argv[]) {
 		// 		loc[i][2] = wb_supervisor_field_get_sf_rotation(robs_rotation[i])[3]*sign(wb_supervisor_field_get_sf_rotation(robs_rotation[i])[2]);; // THETA			
 		// 	}
 			
-			// if (VERBOSE) {
-			// 	for (i=0;i<FLOCK_SIZE;i++) {
-			// 	// printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2]);
+		// 	if (VERBOSE) {
+		// 		print('envoie')
+		// 		for (int i=0;i<FLOCK_SIZE;i++) {
+		// 		// printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2]);
 
-			// 	sprintf(buffer,"%1d#%f#%f#%f",i+offset,loc[i][0],loc[i][1],loc[i][2]);
-            // 	wb_emitter_send(emitter,buffer,strlen(buffer));
-			// 	}
+		// 		sprintf(buffer,"%1d#%f#%f#%f#%d",i+offset,loc[i][0],loc[i][1],loc[i][2], 0.0 );
+        //     	wb_emitter_send(emitter,buffer,strlen(buffer));
+		// 		}
 				
-			// }			
+		// 	}			
 		// }
-		t += TIME_STEP;
+		// t += TIME_STEP;
 	}
 
   return 0;
