@@ -64,6 +64,16 @@ int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
 int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
+double X_next[FLOCK_SIZE][2];
+
+// Laplace matrix
+double L[FLOCK_SIZE][FLOCK_SIZE] = {
+	{ 1, -1,  0,  0,  0},
+	{-1,  2, -1,  0,  0},
+	{ 0, -1,  2, -1,  0},
+	{ 0,  0, -1,  2, -1},
+	{ 0,  0,  0, -1,  1}
+};
 
 /*
  * Reset the robot's devices and get its ID
@@ -196,59 +206,6 @@ void reynolds_rules() {
     #endif
 }
 
-/*
- * Update speed according to Laplacian rules
- */
-void laplacian_rules(){
-	printf("laplace");
-
-	// Save current positions
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		for (int j = 0; j < 2; j++) {
-			X_next[i][j] = X[i][j];
-		}
-	}
-
-	// Apply Laplacian feedback control
-	double LX[FLOCK_SIZE][2];
-	double Lb[FLOCK_SIZE][2];
-	multiply_matrix_vector(L, X, LX);
-	multiply_matrix_vector(L, b, Lb);
-
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		for (int j = 0; j < 2; j++) {
-			X_next[i][j] += -TIME_STEP  * (LX[i][j] - Lb[i][j]);
-		}
-	}
-
-	// Apply constant velocity
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		X_next[i][0] += TIME_STEP  * VGx;
-		X_next[i][1] += TIME_STEP  * VGy;
-	}
-
-	// control law
-	x = X_next[robot_id][0] ;
-	y = X_next[robot_id][1] ;
-	float Ku = 0.2;   // Forward control coefficient
-	float Kw = 0.5;  // Rotational control coefficient
-	float range = sqrtf(x*x + y*y);	  // Distance to the wanted position
-	float bearing = atan2(y, x);	  // Orientation of the wanted position
-	
-	// Compute forward control
-	float u = Ku*range*cosf(bearing);
-	// Compute rotational control
-	float w = Kw*bearing;
-	
-	// Convert to wheel speeds!
-	*msl = (u - AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
-	*msr = (u + AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
-
-	limit(msl,MAX_SPEED);
-	limit(msr,MAX_SPEED);
-}
-
-
 void multiply_matrix_vector(double mat[FLOCK_SIZE][FLOCK_SIZE], double vec[FLOCK_SIZE][2], double result[FLOCK_SIZE][2]) {
 	for (int i = 0; i < FLOCK_SIZE; i++) {
 		for (int j = 0; j < 2; j++) {
@@ -280,6 +237,67 @@ void limit(int *number, int limit) {
 		*number = limit;
 	if (*number < -limit)
 		*number = -limit;
+}
+
+void laplacian_rules(int *msl, int *msr){
+    // Goal velocities
+    double VGx = 0.0 , VGy = 0.0;
+	float x, y;
+
+    double b[FLOCK_SIZE][2] = {{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}};
+
+	// Save current positions
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		for (int j = 0; j < 2; j++) {
+			X_next[i][j] = loc[i][j];
+		}
+	}
+
+	// Apply Laplacian feedback control
+	double LX[FLOCK_SIZE][2];
+	double Lb[FLOCK_SIZE][2];
+	multiply_matrix_vector(L, X_next, LX);
+	multiply_matrix_vector(L, b, Lb);
+
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		for (int j = 0; j < 2; j++) {
+			X_next[i][j] += -DELTA_T  * (LX[i][j] - Lb[i][j]);
+		}
+	}
+
+	printf("X_next of robot %d : %f, %f\n",robot_id, X_next[robot_id][0], X_next[robot_id][1]);
+
+	// Apply constant velocity
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		X_next[i][0] += TIME_STEP  * VGx;
+		X_next[i][1] += TIME_STEP  * VGy;
+	}
+
+	// control law
+	x = X_next[robot_id][0]-prev_loc[robot_id][0];
+	y = X_next[robot_id][1]-prev_loc[robot_id][1];
+	float Ku = 0.2;   // Forward control coefficient
+	float Kw = 0.01;  // Rotational control coefficient
+	float range = sqrtf(x*x + y*y);	  // Distance to the wanted position
+	float bearing = atan2(y, x);	  // Orientation of the wanted position
+	
+	// Compute forward control
+	float u = Ku*range*cosf(bearing);
+	// Compute rotational control
+	float w = Kw*bearing;
+	
+	// Convert to wheel speeds!
+	*msl = (u - AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+	*msr = (u + AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+
+	limit(msl,MAX_SPEED);
+	limit(msr,MAX_SPEED);
+
+	printf(" robot : %d msl: %d, msr: %d\n", robot_id, *msl, *msr);
+	printf("range is %f\n", range);
+	printf("U is %f\n", u);
+	printf("Bearing is %f\n", bearing);
+	printf("W is %f\n", w);
 }
 
 /*
@@ -347,6 +365,9 @@ void update_position() {
         const double *imu_values = wb_inertial_unit_get_roll_pitch_yaw(imu);
 
         // Update position with IMU
+		prev_loc[robot_id][0] = loc[robot_id][0];
+		prev_loc[robot_id][1] = loc[robot_id][1];
+		prev_loc[robot_id][2] = loc[robot_id][2];
         loc[robot_id][0] = gps_values[0];
         loc[robot_id][1] = gps_values[1];
         loc[robot_id][2] = imu_values[2]; // Use yaw from IMU
@@ -511,25 +532,6 @@ int main(){
 	// If all robots have passed x = 0.3, switch controller
 	if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
 		strcpy(Controller, "laplace");
-
-		// Goal velocities
-		double VGx = 0.0 , VGy = 0.0;
-
-		// Initial positions (X and Y)
-		double X[FLOCK_SIZE][2] = {{loc}};
-
-
-		double b[FLOCK_SIZE][2] = {{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}};
-		double X_next[FLOCK_SIZE][2];
-
-		// Laplace matrix
-		double L[FLOCK_SIZE][FLOCK_SIZE] = {
-			{ 1, -1,  0,  0,  0},
-			{-1,  2, -1,  0,  0},
-			{ 0, -1,  2, -1,  0},
-			{ 0,  0, -1,  2, -1},
-			{ 0,  0,  0, -1,  1}
-		};
 		printf("Switched to Laplace\n");
 	}
 
@@ -550,24 +552,28 @@ int main(){
 		// Apply Reynold's rules
 		reynolds_rules();
 		// printf("Applying REYNOLD rules\n");
+
+		// Compute wheels speed from Reynold's speed
+		compute_wheel_speeds(&msl, &msr);
 	} else if (strcmp(Controller, "laplace") == 0) {
 		// Placeholder for Laplace rules
-		laplacian_rules(); // Replace with laplacian_rules() when implemented
+		migr[0] = 4.3; // Migration vector
+		migr[1] = 1.6;
+		laplacian_rules(&msl, &msr); // Replace with laplacian_rules() when implemented
 		// printf("Applying Laplacian rules\n");
 	}
 	
-	// Compute wheels speed from Reynold's speed
-	compute_wheel_speeds(&msl, &msr);
+	if(strcmp(Controller, "reynold") == 0){
+		// Adapt speed instinct to distance sensor values
+		if (sum_sensors > NB_SENSORS*MIN_SENS) {
+			msl -= msl*max_sens/(2*MAX_SENS);
+			msr -= msr*max_sens/(2*MAX_SENS);
+		}
 
-	// Adapt speed instinct to distance sensor values
-	if (sum_sensors > NB_SENSORS*MIN_SENS) {
-		msl -= msl*max_sens/(2*MAX_SENS);
-		msr -= msr*max_sens/(2*MAX_SENS);
+		// Add Braitenberg
+		msl += bmsl;
+		msr += bmsr;
 	}
-
-	// Add Braitenberg
-	msl += bmsl;
-	msr += bmsr;
 
 	// Set speed
 	msl_w = msl*MAX_SPEED_WEB/1000;
