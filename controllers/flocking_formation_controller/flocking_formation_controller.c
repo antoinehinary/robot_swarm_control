@@ -19,6 +19,8 @@
 
 #define FLOCK_SIZE	  5	  // Size of flock
 #define TIME_STEP	  64	  // [ms] Length of time step
+#define WHEEL_RADIUS		0.0205	// Wheel radius (meters)
+#define AXLE_LENGTH 		0.052	// Distance between wheels of robot (meters)
 
 
 
@@ -33,7 +35,7 @@ int robot_id_u, robot_id;	// Unique and normalized (between 0 and FLOCK_SIZE-1),
 char Controller[7] = "reynold";
 float loc[FLOCK_SIZE][3];	// X, Y, Theta of all robots
 float prev_loc[FLOCK_SIZE][3];	// Previous X, Y, Theta values
-int arrived[FLOCK_SIZE] = {0,0,0,0};
+int arrived[FLOCK_SIZE] = {0,0,0,0, 0};
 int t;
 
 static void reset() {
@@ -74,6 +76,14 @@ static void reset() {
 	printf("Reset: robot %d\n",robot_id_u);
 }
 
+void limit(int *number, int limit) {
+
+	if (*number > limit)
+		*number = limit;
+	if (*number < -limit)
+		*number = -limit;
+}
+
 void laplacian_rules(){
 	printf("laplace");
 
@@ -106,10 +116,12 @@ void laplacian_rules(){
 
 
     // Goal velocities
-    double VGx = 2.5 , VGy = 1.6;
+    double VGx = 0.0 , VGy = 0.0;
 
     // Initial positions (X and Y)
-    double X[FLOCK_SIZE][2] = loc
+    double X[FLOCK_SIZE][2] = {{loc}};
+
+
     double b[FLOCK_SIZE][2] = {{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}};
     double X_next[FLOCK_SIZE][2];
 
@@ -134,11 +146,13 @@ void laplacian_rules(){
 
 	// Apply Laplacian feedback control
 	double LX[FLOCK_SIZE][2];
+	double Lb[FLOCK_SIZE][2];
 	multiply_matrix_vector(L, X, LX);
+	multiply_matrix_vector(L, b, Lb);
 
 	for (int i = 0; i < FLOCK_SIZE; i++) {
 		for (int j = 0; j < 2; j++) {
-			X_next[i][j] += -TIME_STEP  * (LX[i][j] - b[i][j]);
+			X_next[i][j] += -TIME_STEP  * (LX[i][j] - Lb[i][j]);
 		}
 	}
 
@@ -148,12 +162,25 @@ void laplacian_rules(){
 		X_next[i][1] += TIME_STEP  * VGy;
 	}
 
-	// Update positions for the next iteration
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		for (int j = 0; j < 2; j++) {
-			X[i][j] = X_next[i][j];
-		}
-	}
+	// control law
+	x = X_next[robot_id][0] ;
+	y = X_next[robot_id][1] ;
+	float Ku = 0.2;   // Forward control coefficient
+	float Kw = 0.5;  // Rotational control coefficient
+	float range = sqrtf(x*x + y*y);	  // Distance to the wanted position
+	float bearing = atan2(y, x);	  // Orientation of the wanted position
+	
+	// Compute forward control
+	float u = Ku*range*cosf(bearing);
+	// Compute rotational control
+	float w = Kw*bearing;
+	
+	// Convert to wheel speeds!
+	*msl = (u - AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+	*msr = (u + AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+
+	limit(msl,MAX_SPEED);
+	limit(msr,MAX_SPEED);
 
 }
 
@@ -221,47 +248,57 @@ int main(int argc, char *argv[]) {
 			
 // 			speed[rob_nb][0] = (1/TIME_STEP )*(loc[rob_nb][0]-prev_loc[rob_nb][0]);
 // 			speed[rob_nb][1] = (1/TIME_STEP )*(loc[rob_nb][1]-prev_loc[rob_nb][1]);
-// 			count++;
+// 			arrived[rob_nb] = isthere;
+			//count++;
 // 			}
-			arrived[rob_nb] = isthere;
+			
 
-			wb_receiver_next_packet(receiver);
-		}
+		// 	wb_receiver_next_packet(receiver);
+		// }
 
-		for (int i=0;i<FLOCK_SIZE;i++) {
-			printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2], arrived[i]);
-		}
-		if (loc[robot_id][0] > 0.4){
-			arrived[robot_id] = 1;
-		}
+		// for (int i=0;i<FLOCK_SIZE;i++) {
+		// 	printf("Robot %d: x=%f, y=%f, theta=%f\n", i, loc[i][0], loc[i][1], loc[i][2], arrived[i]);
+		// }
+		// if (loc[robot_id][0] > 0.4){
+		// 	arrived[robot_id] = 1;
+		// }
 
-		int cout = 0;
-		for(int i=0;i<FLOCK_SIZE;i++) {
-			if (arrived[i] == 1){
-				cout++;
-				if (cout == FLOCK_SIZE){
-					strcpy(Controller, "laplace");
-				}
-			}else{
-				break;
-			}
-		}
+		// int cout = 0;
+		// for(int i=0;i<FLOCK_SIZE;i++) {
+		// 	if (arrived[i] == 1){
+		// 		cout++;
+		// 		if (cout == FLOCK_SIZE){
+		// 			strcpy(Controller, "laplace");
+		// 		}
+		// 	}else{
+		// 		break;
+		// 	}
+		// }
 
-		// Change the content to "laplace"
-    	if (strcmp(Controller, "reynold") == 0){
-			// reynolds_rules();
-			printf("reynold");
-		}else if (strcmp(Controller, "laplace")==0){
-			laplacian_rules();
-		}
+		// // Change the content to "laplace"
+    	// if (strcmp(Controller, "reynold") == 0){
+		// 	// reynolds_rules();
+		// 	printf("reynold");
+		// }else if (strcmp(Controller, "laplace")==0){
+		// 	laplacian_rules();
+		// }
+
+		laplacian_rules();
 		
+		// // Compute wheels speed from Reynold's speed
+		// compute_wheel_speeds(&msl, &msr);
 
-		
+
+				// Set speed
+		msl_w = msl*MAX_SPEED_WEB/1000;
+		msr_w = msr*MAX_SPEED_WEB/1000;
+		wb_motor_set_velocity(left_motor, msl_w);
+		wb_motor_set_velocity(right_motor, msr_w);
 		
 
 		// Continue one step
 		wb_robot_step(TIME_STEP);
-
+		}
 	}
 }
 
