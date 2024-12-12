@@ -23,7 +23,7 @@
 #define NB_SENSORS      8       // Number of distance sensors
 #define MIN_SENS        60      // Minimum sensibility value
 #define MAX_SENS        250     // Maximum sensibility value
-#define MAX_SPEED       800     // Maximum speed
+#define MAX_SPEED       700     // Maximum speed
 #define MAX_SPEED_WEB   6.28    // Maximum speed webots
 #define FLOCK_SIZE      5       // Size of flock
 #define TIME_STEP       64      // [ms] Length of time step
@@ -31,7 +31,7 @@
 #define SPEED_UNIT_RADS 0.00628 // Conversion factor from speed unit to radian per second
 #define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
 #define DELTA_T         0.064   // Timestep (seconds)
-#define RULE1_THRESHOLD 0.25    // Threshold to activate aggregation rule. default 0.20
+#define RULE1_THRESHOLD 0.2    // Threshold to activate aggregation rule. default 0.20
 #define RULE1_WEIGHT    (0.6/10)// Weight of aggregation rule. default 0.6/10
 #define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
 #define RULE2_WEIGHT    (0.02/10)// Weight of dispersion rule. default 0.02/10
@@ -54,6 +54,7 @@ WbDeviceTag emitter;      // Handle for the emitter node
 WbDeviceTag gps;      // Handle for the gps node
 WbDeviceTag imu;      // Handle for the imu node
 
+char Controller[8] = "reynold"; // Control mode
 int e_puck_matrix[16] = {50,35,20,0,0,-20,-35,-45,-45,-35,-20,0,0,20,35,50}; // Custom
 int robot_id_u, robot_id; // Unique and normalized (between 0 and FLOCK_SIZE-1), robot ID
 float loc[FLOCK_SIZE][3]; // X, Y, Theta of all robots
@@ -61,6 +62,7 @@ float prev_loc[FLOCK_SIZE][3]; // Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
+int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 
 /*
@@ -189,9 +191,73 @@ void reynolds_rules() {
     }
 
     #ifdef MIGRATORY_URGE
-    speed[robot_id][0] += MIGRATION_WEIGHT * (migr[0] - loc[robot_id][0]);
-    speed[robot_id][1] += MIGRATION_WEIGHT * (migr[1] - loc[robot_id][1]);
+		speed[robot_id][0] += MIGRATION_WEIGHT * (migr[0] - loc[robot_id][0]);
+		speed[robot_id][1] += MIGRATION_WEIGHT * (migr[1] - loc[robot_id][1]);
     #endif
+}
+
+/*
+ * Update speed according to Laplacian rules
+ */
+void laplacian_rules(){
+	printf("laplace");
+
+	// Save current positions
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		for (int j = 0; j < 2; j++) {
+			X_next[i][j] = X[i][j];
+		}
+	}
+
+	// Apply Laplacian feedback control
+	double LX[FLOCK_SIZE][2];
+	double Lb[FLOCK_SIZE][2];
+	multiply_matrix_vector(L, X, LX);
+	multiply_matrix_vector(L, b, Lb);
+
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		for (int j = 0; j < 2; j++) {
+			X_next[i][j] += -TIME_STEP  * (LX[i][j] - Lb[i][j]);
+		}
+	}
+
+	// Apply constant velocity
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		X_next[i][0] += TIME_STEP  * VGx;
+		X_next[i][1] += TIME_STEP  * VGy;
+	}
+
+	// control law
+	x = X_next[robot_id][0] ;
+	y = X_next[robot_id][1] ;
+	float Ku = 0.2;   // Forward control coefficient
+	float Kw = 0.5;  // Rotational control coefficient
+	float range = sqrtf(x*x + y*y);	  // Distance to the wanted position
+	float bearing = atan2(y, x);	  // Orientation of the wanted position
+	
+	// Compute forward control
+	float u = Ku*range*cosf(bearing);
+	// Compute rotational control
+	float w = Kw*bearing;
+	
+	// Convert to wheel speeds!
+	*msl = (u - AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+	*msr = (u + AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+
+	limit(msl,MAX_SPEED);
+	limit(msr,MAX_SPEED);
+}
+
+
+void multiply_matrix_vector(double mat[FLOCK_SIZE][FLOCK_SIZE], double vec[FLOCK_SIZE][2], double result[FLOCK_SIZE][2]) {
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		for (int j = 0; j < 2; j++) {
+			result[i][j] = 0.0;
+			for (int k = 0; k < FLOCK_SIZE; k++) {
+				result[i][j] += mat[i][k] * vec[k][j];
+			}
+		}
+	}
 }
 
 /*
@@ -325,7 +391,7 @@ void initial_pos(void){
 		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
 		// Only info about self will be taken into account at first.
 
-    // robot_nb %= FLOCK_SIZE;
+    	// robot_nb %= FLOCK_SIZE;
 		if (rob_nb == robot_id) {
 			// Initialize self position
 			loc[rob_nb][0] = rob_x; 		// x-position
@@ -351,6 +417,7 @@ int main(){
 	int rob_nb;			// Robot number
 	float rob_x, rob_y, rob_theta;  // Robot position and orientation
 	int distances[NB_SENSORS];	// Array for the distance sensor readings
+	int isthere;			// Flag for robot arrival
 	char *inbuffer;			// Buffer for the receiver node
 	int max_sens;			// Store highest sensor value
 	char outbuffer[255];
@@ -388,10 +455,10 @@ int main(){
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
 			inbuffer = (char*) wb_receiver_get_data(receiver);
-			sscanf(inbuffer,"%d#%f#%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta);
+			sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
 			
-      rob_nb %= FLOCK_SIZE;
-      if (initialized[rob_nb] == 0) {
+			rob_nb %= FLOCK_SIZE;
+			if (initialized[rob_nb] == 0) {
 				// Get initial positions
 				loc[rob_nb][0] = rob_x; //x-position
 				loc[rob_nb][1] = rob_y; //y-position
@@ -401,7 +468,7 @@ int main(){
 				initialized[rob_nb] = 1;
 			} else {
 				// Get position update
-				printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
+				// printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
 				prev_loc[rob_nb][0] = loc[rob_nb][0];
 				prev_loc[rob_nb][1] = loc[rob_nb][1];
 				loc[rob_nb][0] = rob_x; //x-position
@@ -411,24 +478,83 @@ int main(){
 			
 			speed[rob_nb][0] = (1/DELTA_T)*(loc[rob_nb][0]-prev_loc[rob_nb][0]);
 			speed[rob_nb][1] = (1/DELTA_T)*(loc[rob_nb][1]-prev_loc[rob_nb][1]);
+		
+			arrived[rob_nb] = isthere;
+			
 			count++;
 
-		wb_receiver_next_packet(receiver);
-	}
+			wb_receiver_next_packet(receiver);
+		}
 
 	// Compute self position & speed
 	prev_loc[robot_id][0] = loc[robot_id][0];
 	prev_loc[robot_id][1] = loc[robot_id][1];
 
-  update_position();
+  	update_position();
 
 	update_self_motion(msl,msr);
 
 	speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
 	speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
+	
+	if (loc[robot_id][0] > 0.4){
+		arrived[robot_id] = 1;
+	}
 
-	// Reynold's rules with all previous info (updates the speed[][] table)
-	reynolds_rules();
+	int arrived_count = 0;
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		if ((loc[i][0] > 0.3) & (loc[i][0] < 1.5)) {
+			arrived_count++; // Increment count if robot has passed x = 0.3
+		}
+	}
+
+	// If all robots have passed x = 0.3, switch controller
+	if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
+		strcpy(Controller, "laplace");
+
+		// Goal velocities
+		double VGx = 0.0 , VGy = 0.0;
+
+		// Initial positions (X and Y)
+		double X[FLOCK_SIZE][2] = {{loc}};
+
+
+		double b[FLOCK_SIZE][2] = {{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}};
+		double X_next[FLOCK_SIZE][2];
+
+		// Laplace matrix
+		double L[FLOCK_SIZE][FLOCK_SIZE] = {
+			{ 1, -1,  0,  0,  0},
+			{-1,  2, -1,  0,  0},
+			{ 0, -1,  2, -1,  0},
+			{ 0,  0, -1,  2, -1},
+			{ 0,  0,  0, -1,  1}
+		};
+		printf("Switched to Laplace\n");
+	}
+
+	int exited_count = 0;
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		if (loc[i][0] > 1.8) {
+			exited_count++; // Increment count if robot has passed x = 0.3
+		}
+	}
+
+	if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
+		strcpy(Controller, "reynold");
+		printf("Switched to Reynold\n");
+	}
+
+	// Controller logic
+	if (strcmp(Controller, "reynold") == 0) {
+		// Apply Reynold's rules
+		reynolds_rules();
+		// printf("Applying REYNOLD rules\n");
+	} else if (strcmp(Controller, "laplace") == 0) {
+		// Placeholder for Laplace rules
+		laplacian_rules(); // Replace with laplacian_rules() when implemented
+		// printf("Applying Laplacian rules\n");
+	}
 	
 	// Compute wheels speed from Reynold's speed
 	compute_wheel_speeds(&msl, &msr);
@@ -456,10 +582,9 @@ int main(){
 	// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
 	/*Implement your code here*/
 	if (INTER_VEHICLE_COM) {
-        	    sprintf(outbuffer,"%1d#%f#%f#%f",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2]);
-                wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
-           }
-
+		sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
+		wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
+	}
 
 	// Continue one step
 	wb_robot_step(TIME_STEP);

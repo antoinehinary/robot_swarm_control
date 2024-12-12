@@ -17,8 +17,9 @@
 
 #define FLOCK_SIZE 5        // Number of robots in flock
 #define TIME_STEP 64        // [ms] Length of time step
+#define DELTA_T 0.064   // Timestep (seconds)
 #define RULE1_THRESHOLD 0.2
-#define V_MAX 0.1           // Maximum speed of a robot
+#define V_MAX 0.1288          // Maximum speed of a robot
 #define D_MAX 0.5           // Maximum distance per timestep
 
 WbNodeRef robs[FLOCK_SIZE];      // Robots nodes
@@ -31,6 +32,8 @@ float prev_loc[FLOCK_SIZE][2];   // Previous locations to calculate velocity
 float migrx = 0.8, migry = 1.6;  // Migration vector
 float orient_migr;               // Migration orientation
 FILE *csv_file;                  // Pointer for CSV file
+
+int state = 0;                   // State of the flock 0 = Reynold / 1 = Laplace
 
 // Sign function
 double sign(double x) {
@@ -62,8 +65,13 @@ void reset(void) {
     }
 
     // Write CSV header
-    fprintf(csv_file, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4\n");
+    fprintf(csv_file, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4");
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        fprintf(csv_file, ",v_%d", i); // Add headers for individual velocities
+    }
+    fprintf(csv_file, "\n");
 }
+
 
 /*
  * Calculate orientation alignment metric o[t]
@@ -82,32 +90,65 @@ float calculate_orientation() {
  * Calculate distance metric d[t]
  */
 float calculate_distance() {
-    float d_t = 0;
+    float com_x = 0.0, com_y = 0.0;
+    float d_t = 0.0;
+
+    // Step 1: Calculate the center of mass (COM) of the flock
     for (int i = 0; i < FLOCK_SIZE; i++) {
-        for (int j = 0; j < FLOCK_SIZE; j++) {
-            if (i != j) {
-                float dist = sqrtf(powf(loc[i][0] - loc[j][0], 2) + powf(loc[i][1] - loc[j][1], 2));
-                d_t += fabs(dist - RULE1_THRESHOLD);
-            }
-        }
+        com_x += loc[i][0];  // Sum up all x-coordinates
+        com_y += loc[i][1];  // Sum up all y-coordinates
     }
-    return 1 / (1 + d_t / (FLOCK_SIZE * (FLOCK_SIZE - 1)));
+    com_x /= FLOCK_SIZE;  // Average x-coordinate
+    com_y /= FLOCK_SIZE;  // Average y-coordinate
+
+    // Step 2: Compute the deviation of each robot's distance from the COM
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        float dist = sqrtf(powf(loc[i][0] - com_x, 2) + powf(loc[i][1] - com_y, 2)); // Distance to COM
+        d_t += fabs(dist - RULE1_THRESHOLD); // Deviation from the threshold
+    }
+
+    // Step 3: Normalize the result and apply the final formula
+    return 1.0 / (1.0 + (d_t / FLOCK_SIZE));
 }
+
 
 /*
  * Calculate velocity metric v[t]
  */
 float calculate_velocity() {
-    float v_t = 0;
+    float com_x = 0.0, com_y = 0.0;
+    float prev_com_x = 0.0, prev_com_y = 0.0;
+
+    // Step 1: Calculate the COM at the current time step
     for (int i = 0; i < FLOCK_SIZE; i++) {
-        // Compute velocity projection along migration direction
-        float vx = (loc[i][0] - prev_loc[i][0]) / (TIME_STEP / 1000.0); // Velocity X
-        float vy = (loc[i][1] - prev_loc[i][1]) / (TIME_STEP / 1000.0); // Velocity Y
-        float proj_migr = (vx * migrx + vy * migry) / sqrtf(migrx * migrx + migry * migry);
-        v_t += fmax(proj_migr, 0);
+        com_x += loc[i][0];
+        com_y += loc[i][1];
     }
-    return v_t / V_MAX;
+    com_x /= FLOCK_SIZE;
+    com_y /= FLOCK_SIZE;
+
+    // Step 2: Calculate the COM at the previous time step
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        prev_com_x += prev_loc[i][0];
+        prev_com_y += prev_loc[i][1];
+    }
+    prev_com_x /= FLOCK_SIZE;
+    prev_com_y /= FLOCK_SIZE;
+
+    // Step 3: Compute the velocity of the COM
+    float vel_x = (com_x - prev_com_x) / DELTA_T; // Velocity in x-direction
+    float vel_y = (com_y - prev_com_y) / DELTA_T; // Velocity in y-direction
+
+    // Step 4: Compute the projection onto the migration direction
+    float flock_migrx = migrx - com_x;
+    float flock_migry = migry - com_y;
+    float migration_magnitude = sqrtf(flock_migrx * flock_migrx + flock_migry * flock_migry); // Magnitude of migration vector
+    float proj_migr = (vel_x * flock_migrx + vel_y * flock_migry) / migration_magnitude;
+
+    // Step 5: Normalize the projection and ensure it is non-negative
+    return fmax(proj_migr, 0) / V_MAX;
 }
+
 
 /*
  * Update previous positions
@@ -119,6 +160,9 @@ void update_previous_positions() {
     }
 }
 
+/*
+ * Compute performance metric and write to CSV
+ */
 /*
  * Compute performance metric and write to CSV
  */
@@ -134,6 +178,14 @@ void log_metrics(int time) {
     // Append positions of all robots
     for (int i = 0; i < FLOCK_SIZE; i++) {
         fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
+    }
+
+    // Compute and append velocities of all robots
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
+        float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
+        float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y); // Magnitude of velocity
+        fprintf(csv_file, ",%f", velocity);
     }
 
     // End the line
