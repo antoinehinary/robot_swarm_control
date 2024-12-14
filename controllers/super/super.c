@@ -325,19 +325,20 @@ void log_metrics(int time) {
         // Append positions of all robots
         for (int i = 0; i < FLOCK_SIZE; i++) {
             fprintf(Reynold2, ",%f,%f", loc[i][0], loc[i][1]);
+            fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
         }
         // Compute and append velocities of all robots
         for (int i = 0; i < FLOCK_SIZE; i++) {
             float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
             float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
             float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y);
-            fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
+            fprintf(csv_file, ",%f", velocity);
             fprintf(Reynold2, ",%f", velocity);
         }
-        fprintf(csv_file, "\n");
         fprintf(Reynold2, "\n");
-        fflush(csv_file); // Ensure the data is written to the file
+        fprintf(csv_file, "\n");
         fflush(Reynold2); // Ensure the data is written to the file
+        fflush(csv_file); // Ensure the data is written to the file
     }
 }
 

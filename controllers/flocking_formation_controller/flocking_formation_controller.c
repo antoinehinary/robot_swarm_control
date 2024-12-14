@@ -65,7 +65,7 @@ float prev_loc[FLOCK_SIZE][3]; // Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
-float final_migration[2] = {4, 1.6}; // Migration vector
+float final_migration[2] = {4.2, 1.7}; // Migration vector
 int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 double X_next[FLOCK_SIZE][2];
@@ -245,16 +245,16 @@ void limit(int *number, int limit) {
 
 // Main Laplacian controller
 void laplacian_rules(int *msl, int *msr) {
-    double VGx = 0.2, VGy = 0.0;  // Group migration velocity
+    double VGx = 0.18, VGy = 0.0;  // Group migration velocity
     float x, y;
 
     // Desired positions (straight line configuration)
     double b[FLOCK_SIZE][2] = {
-        {0.4, 1.65},
-        {0.6, 1.65},
-        {0.8, 1.65},
-        {0.0, 1.65},
-        {0.2, 1.65}
+        {0.4, 0},
+        {0.6, 0},
+        {0.8, 0},
+        {0.0, 0},
+        {0.2, 0}
     };
 
     // Save current positions
@@ -291,10 +291,10 @@ void laplacian_rules(int *msl, int *msr) {
 
     // Compute control input for the current robot
     x = X_next[robot_id][0] - loc[robot_id][0];
-    y = 1.6 - loc[robot_id][1];
+    y = 1.58 - loc[robot_id][1];
 
     // Parameters for proportional control
-    float Ku = 0.1;  // Smaller forward control coefficient
+    float Ku = 0.15;  // Smaller forward control coefficient
 	float Kw = 0.15;  // Reduced rotational control coefficient
 
     // Compute the distance (range) and angle (bearing) to the target
@@ -582,8 +582,8 @@ int main(){
 		}
 	} else if (strcmp(Controller, "laplace") == 0) {
 		// Placeholder for Laplace rules
-		migr[0] = 4; // Migration vector
-		migr[1] = 1.6;
+		migr[0] = 5; // Migration vector
+		migr[1] = 1.5; // Migration vector
 		laplacian_rules(&msl, &msr); // Replace with laplacian_rules() when implemented
 		// printf("Applying Laplacian rules\n");
 	}
