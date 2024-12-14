@@ -291,11 +291,11 @@ void laplacian_rules(int *msl, int *msr) {
 
     // Compute control input for the current robot
     x = X_next[robot_id][0] - loc[robot_id][0];
-    y = X_next[robot_id][1] - loc[robot_id][1];
+    y = 1.6 - loc[robot_id][1];
 
     // Parameters for proportional control
     float Ku = 0.1;  // Smaller forward control coefficient
-	float Kw = 0.1;  // Reduced rotational control coefficient
+	float Kw = 0.15;  // Reduced rotational control coefficient
 
     // Compute the distance (range) and angle (bearing) to the target
     float range = sqrtf(x * x + y * y);
@@ -567,7 +567,7 @@ int main(){
 
 	if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
 		strcpy(Controller, "reynold");
-		printf("Robot %d switched to Reynold, new migration point : %f, %f\n", robot_id, migr[0], migr[1]);
+		// printf("Robot %d switched to Reynold, new migration point : %f, %f\n", robot_id, migr[0], migr[1]);
 	}
 
 	// Controller logic
@@ -578,7 +578,7 @@ int main(){
 		compute_wheel_speeds(&msl, &msr);
 
 		if(switched == 1){
-			printf("Robot %d has position : %f, %f\n", robot_id, loc[robot_id][0], loc[robot_id][1]);
+			// printf("Robot %d has position : %f, %f\n", robot_id, loc[robot_id][0], loc[robot_id][1]);
 		}
 	} else if (strcmp(Controller, "laplace") == 0) {
 		// Placeholder for Laplace rules

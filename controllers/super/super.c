@@ -32,8 +32,12 @@ float prev_loc[FLOCK_SIZE][2];   // Previous locations to calculate velocity
 float migrx = 0.8, migry = 1.6;  // Migration vector
 float orient_migr;               // Migration orientation
 FILE *csv_file;                  // Pointer for CSV file
+FILE *Reynold1;                  // Pointer for CSV file
+FILE *Reynold2;                  // Pointer for CSV file
+FILE *Laplace;                  // Pointer for CSV file
 
 int state = 0;                   // State of the flock 0 = Reynold / 1 = Laplace
+int switched = 0;                   // State of the flock 0 = Reynold / 1 = Laplace
 
 // Sign function
 double sign(double x) {
@@ -58,18 +62,50 @@ void reset(void) {
     }
 
     // Open CSV file for writing
-    csv_file = fopen("flocking_data.csv", "w");
+    csv_file = fopen("full_data.csv", "w");
     if (!csv_file) {
-        printf("Error opening CSV file!\n");
+        printf("Error full data opening CSV file!\n");
+        exit(1);
+    } 
+
+    // Open CSV file for writing
+    Reynold1 = fopen("Reynold1.csv", "w");
+    if (!Reynold1) {
+        printf("Error Reynold1 opening CSV file!\n");
+        exit(1);
+    } 
+
+    // Open CSV file for writing
+    Laplace = fopen("Laplace.csv", "w");
+    if (!Laplace) {
+        printf("Error Laplace opening CSV file!\n");
+        exit(1);
+    } 
+
+    // Open CSV file for writing
+    Reynold2 = fopen("Reynold2.csv", "w");
+    if (!Reynold2) {
+        printf("Error Reynold2 opening CSV file!\n");
         exit(1);
     }
 
     // Write CSV header
     fprintf(csv_file, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4");
+    fprintf(Reynold1, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4");
+    fprintf(Laplace,  "Time,d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4");
+    fprintf(Reynold2, "Time,o[t],d[t],v[t],M_fl[t],x_0,y_0,x_1,y_1,x_2,y_2,x_3,y_3,x_4,y_4");
+    
     for (int i = 0; i < FLOCK_SIZE; i++) {
         fprintf(csv_file, ",v_%d", i); // Add headers for individual velocities
+        fprintf(Reynold1, ",v_%d", i); // Add headers for individual velocities
+        fprintf(Laplace,  ",v_%d", i); // Add headers for individual velocities
+        fprintf(Reynold2, ",v_%d", i); // Add headers for individual velocities
     }
+
     fprintf(csv_file, "\n");
+    fprintf(Reynold1, "\n");
+    fprintf(Laplace,  "\n");
+    fprintf(Reynold2, "\n");
 }
 
 
@@ -161,39 +197,6 @@ void update_previous_positions() {
 }
 
 /*
- * Compute performance metric and write to CSV
- */
-/*
- * Compute performance metric and write to CSV
- */
-void log_metrics(int time) {
-    float o_t = calculate_orientation();
-    float d_t = calculate_distance();
-    float v_t = calculate_velocity();
-    float m_fl_t = o_t * d_t * v_t;
-
-    // Start with time, metrics, and m_fl_t
-    fprintf(csv_file, "%d,%f,%f,%f,%f", time, o_t, d_t, v_t, m_fl_t);
-
-    // Append positions of all robots
-    for (int i = 0; i < FLOCK_SIZE; i++) {
-        fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
-    }
-
-    // Compute and append velocities of all robots
-    for (int i = 0; i < FLOCK_SIZE; i++) {
-        float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
-        float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
-        float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y); // Magnitude of velocity
-        fprintf(csv_file, ",%f", velocity);
-    }
-
-    // End the line
-    fprintf(csv_file, "\n");
-    fflush(csv_file); // Ensure data is written to the file immediately
-}
-
-/*
  * Send initial poses to the robots
  */
 void send_init_poses(void) {
@@ -219,6 +222,126 @@ void send_init_poses(void) {
 }
 
 /*
+ * Compute distance metric d[t] for Laplace
+ */
+float calculate_distance_laplace() {
+    float d_t = 0.0;
+
+    // Compute the sum of the inverse of the distances to the goal
+    for (int k = 0; k < FLOCK_SIZE; k++) {
+        float g_k_x = migrx; // Target position x (Laplace mode assumes single goal)
+        float g_k_y = migry; // Target position y
+
+        float dist = sqrtf(powf(loc[k][0] - g_k_x, 2) + powf(loc[k][1] - g_k_y, 2));
+        d_t += 1.0 / dist; // Inverse distance
+    }
+
+    // Normalize and compute the distance metric
+    return 1.0 / (1.0 + (d_t / FLOCK_SIZE));
+}
+
+/*
+ * Compute velocity metric v[t] for Laplace
+ */
+float calculate_velocity_laplace() {
+    float v_t = 0.0;
+
+    // Compute the velocity of each robot normalized by D_MAX
+    for (int k = 0; k < FLOCK_SIZE; k++) {
+        float vel_x = (loc[k][0] - prev_loc[k][0]) / DELTA_T; // Velocity in x
+        float vel_y = (loc[k][1] - prev_loc[k][1]) / DELTA_T; // Velocity in y
+
+        float vel_magnitude = sqrtf(vel_x * vel_x + vel_y * vel_y); // Magnitude of velocity
+        v_t += vel_magnitude / D_MAX; // Normalize by D_MAX
+    }
+
+    // Average the velocities across the flock
+    return v_t / FLOCK_SIZE;
+}
+
+/*
+ * Compute performance metric and write to CSV
+ */
+void log_metrics(int time) {
+    float o_t = 0.0; // Orientation alignment (only for Reynold)
+    float d_t, v_t, m_fl_t;
+
+    // Compute the metrics based on the current state
+    if (state == 0 || state == 2) { // Reynold mode
+        o_t = calculate_orientation();
+        d_t = calculate_distance(); // Original Reynold distance metric
+        v_t = calculate_velocity(); // Original Reynold velocity metric
+        m_fl_t = o_t * d_t * v_t;   // Reynold's metric includes orientation
+    } else { // Laplace mode
+        d_t = calculate_distance_laplace(); // New Laplace distance metric
+        v_t = calculate_velocity_laplace(); // New Laplace velocity metric
+        m_fl_t = d_t * v_t;                 // Laplace's metric excludes orientation
+    }
+
+    // Write to the appropriate file based on the state
+    if (state == 1) {
+        fprintf(Laplace, "%d,%f,%f,%f", time, d_t, v_t, m_fl_t);
+        fprintf(csv_file, "%d,%f,%f,%f,%f", time, 0.0, d_t, v_t, m_fl_t);
+        // Append positions of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            fprintf(Laplace, ",%f,%f", loc[i][0], loc[i][1]);
+            fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
+        }
+        // Compute and append velocities of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
+            float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
+            float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y);
+            fprintf(Laplace, ",%f", velocity);
+            fprintf(csv_file, ",%f", velocity);
+        }
+        fprintf(Laplace, "\n");
+        fprintf(csv_file, "\n");
+        fflush(Laplace); // Ensure the data is written to the file
+        fflush(csv_file); // Ensure the data is written to the file
+    } else if (state == 0) {
+        fprintf(Reynold1, "%d,%f,%f,%f,%f", time, o_t, d_t, v_t, m_fl_t);
+        fprintf(csv_file, "%d,%f,%f,%f,%f", time, o_t, d_t, v_t, m_fl_t);
+        // Append positions of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            fprintf(Reynold1, ",%f,%f", loc[i][0], loc[i][1]);
+            fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
+        }
+        // Compute and append velocities of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
+            float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
+            float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y);
+            fprintf(Reynold1, ",%f", velocity);
+            fprintf(csv_file, ",%f", velocity);
+        }
+        fprintf(Reynold1, "\n");
+        fprintf(csv_file, "\n");
+        fflush(Reynold1); // Ensure the data is written to the file
+        fflush(csv_file); // Ensure the data is written to the file
+    } else if (state == 2) {
+        fprintf(csv_file, "%d,%f,%f,%f,%f", time, o_t, d_t, v_t, m_fl_t);
+        fprintf(Reynold2, "%d,%f,%f,%f,%f", time, o_t, d_t, v_t, m_fl_t);
+        // Append positions of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            fprintf(Reynold2, ",%f,%f", loc[i][0], loc[i][1]);
+        }
+        // Compute and append velocities of all robots
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+            float vel_x = (loc[i][0] - prev_loc[i][0]) / DELTA_T;
+            float vel_y = (loc[i][1] - prev_loc[i][1]) / DELTA_T;
+            float velocity = sqrtf(vel_x * vel_x + vel_y * vel_y);
+            fprintf(csv_file, ",%f,%f", loc[i][0], loc[i][1]);
+            fprintf(Reynold2, ",%f", velocity);
+        }
+        fprintf(csv_file, "\n");
+        fprintf(Reynold2, "\n");
+        fflush(csv_file); // Ensure the data is written to the file
+        fflush(Reynold2); // Ensure the data is written to the file
+    }
+}
+
+/*
  * Main function
  */
 int main(int argc, char *args[]) {
@@ -240,6 +363,32 @@ int main(int argc, char *args[]) {
                         sign(wb_supervisor_field_get_sf_rotation(robs_rotation[i])[2]); // THETA
         }
 
+        // Detect mode change and adjust metrics accordingly
+        if (state == 0) { // Reynold mode
+            int arrived_count = 0;
+            for (int i = 0; i < FLOCK_SIZE; i++) {
+                if ((loc[i][0] > 0.3) && (loc[i][0] < 1.5)) {
+                    arrived_count++;
+                }
+            }
+            if (arrived_count == FLOCK_SIZE) {
+                state = 1; // Switch to Laplace mode
+                printf("Switched to Laplace mode at Time: %d, state : %d\n", time, state);
+            }
+        } else if (state == 1) { // Laplace mode
+            int exited_count = 0;
+            for (int i = 0; i < FLOCK_SIZE; i++) {
+                if (loc[i][0] > 2.5) {
+                    exited_count++;
+                }
+            }
+            if (exited_count == FLOCK_SIZE) {
+                state = 2; // Switch back to Reynold mode
+                printf("Switched to Reynold2 mode at Time: %d, state : %d\n", time, state);
+            }
+        }
+
+         
         // Compute and log metrics every 10 steps
         if (time % 10 == 0) {
             log_metrics(time);
@@ -252,6 +401,9 @@ int main(int argc, char *args[]) {
     }
 
     // Close the CSV file
+    fclose(Reynold1);
+    fclose(Reynold2);
+    fclose(Laplace);
     fclose(csv_file);
 
     return 0;
