@@ -44,6 +44,9 @@
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
 
+#define degToRad(angleInDegrees) ((angleInDegrees) * M_PI / 180.0)
+#define radToDeg(angleInRadians) ((angleInRadians) * 180.0 / M_PI)
+
 #define USE_IMU
 
 WbDeviceTag left_motor; //handler for left wheel of the robot
@@ -68,11 +71,11 @@ double X_next[FLOCK_SIZE][2];
 
 // Laplace matrix
 double L[FLOCK_SIZE][FLOCK_SIZE] = {
-	{ 1, -1,  0,  0,  0},
-	{-1,  2, -1,  0,  0},
-	{ 0, -1,  2, -1,  0},
-	{ 0,  0, -1,  2, -1},
-	{ 0,  0,  0, -1,  1}
+	{2,  -1, 0,  0,  -1},
+	{ -1, 2,  -1, 0,  0},
+	{ 0, -1,  1,  0,  0},
+	{ 0,  0, 0,  1, -1},
+	{ -1,  0,  0, -1,  2}
 };
 
 /*
@@ -239,66 +242,83 @@ void limit(int *number, int limit) {
 		*number = -limit;
 }
 
-void laplacian_rules(int *msl, int *msr){
-    // Goal velocities
-    double VGx = 0.0 , VGy = 0.0;
-	float x, y;
+// Main Laplacian controller
+void laplacian_rules(int *msl, int *msr) {
+    double VGx = 0.2, VGy = 0.0;  // Group migration velocity
+    float x, y;
 
-    double b[FLOCK_SIZE][2] = {{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}};
+    // Desired positions (straight line configuration)
+    double b[FLOCK_SIZE][2] = {
+        {0.4, 1.65},
+        {0.6, 1.65},
+        {0.8, 1.65},
+        {0.0, 1.65},
+        {0.2, 1.65}
+    };
 
-	// Save current positions
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		for (int j = 0; j < 2; j++) {
-			X_next[i][j] = loc[i][j];
-		}
-	}
+    // Save current positions
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        for (int j = 0; j < 2; j++) {
+            X_next[i][j] = loc[i][j];
+        }
+    }
 
-	// Apply Laplacian feedback control
-	double LX[FLOCK_SIZE][2];
-	double Lb[FLOCK_SIZE][2];
-	multiply_matrix_vector(L, X_next, LX);
-	multiply_matrix_vector(L, b, Lb);
+    // Calculate delta positions
+    double delta_pos[FLOCK_SIZE][2];
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        for (int j = 0; j < 2; j++) {
+            delta_pos[i][j] = loc[i][j] - b[i][j];
+        }
+    }
 
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		for (int j = 0; j < 2; j++) {
-			X_next[i][j] += -DELTA_T  * (LX[i][j] - Lb[i][j]);
-		}
-	}
+    // Apply Laplacian feedback control
+    double LX[FLOCK_SIZE][2];
+    multiply_matrix_vector(L, delta_pos, LX);
 
-	printf("X_next of robot %d : %f, %f\n",robot_id, X_next[robot_id][0], X_next[robot_id][1]);
+    // Update positions using Laplacian control
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        for (int j = 0; j < 2; j++) {
+            X_next[i][j] -= LX[i][j];  // Correct positions
+        }
+    }
 
-	// Apply constant velocity
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		X_next[i][0] += TIME_STEP  * VGx;
-		X_next[i][1] += TIME_STEP  * VGy;
-	}
+    // Add constant velocity for group migration
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        X_next[i][0] += VGx;
+        X_next[i][1] += VGy;
+    }
 
-	// control law
-	x = X_next[robot_id][0]-prev_loc[robot_id][0];
-	y = X_next[robot_id][1]-prev_loc[robot_id][1];
-	float Ku = 0.2;   // Forward control coefficient
-	float Kw = 0.01;  // Rotational control coefficient
-	float range = sqrtf(x*x + y*y);	  // Distance to the wanted position
-	float bearing = atan2(y, x);	  // Orientation of the wanted position
-	
-	// Compute forward control
-	float u = Ku*range*cosf(bearing);
-	// Compute rotational control
-	float w = Kw*bearing;
-	
-	// Convert to wheel speeds!
-	*msl = (u - AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
-	*msr = (u + AXLE_LENGTH*w/2.0) * (1000.0 / WHEEL_RADIUS);
+    // Compute control input for the current robot
+    x = X_next[robot_id][0] - loc[robot_id][0];
+    y = X_next[robot_id][1] - loc[robot_id][1];
 
-	limit(msl,MAX_SPEED);
-	limit(msr,MAX_SPEED);
+    // Parameters for proportional control
+    float Ku = 0.1;  // Smaller forward control coefficient
+	float Kw = 0.1;  // Reduced rotational control coefficient
 
-	printf(" robot : %d msl: %d, msr: %d\n", robot_id, *msl, *msr);
-	printf("range is %f\n", range);
-	printf("U is %f\n", u);
-	printf("Bearing is %f\n", bearing);
-	printf("W is %f\n", w);
+    // Compute the distance (range) and angle (bearing) to the target
+    float range = sqrtf(x * x + y * y);
+    float dersired_bearing = atan2f(y, x);
+    float bearing = loc[robot_id][2] - dersired_bearing;
+
+    // Compute forward and rotational speeds
+    float u = Ku * range * cosf(bearing);
+    float w = Kw * bearing;
+
+    // Convert to wheel speeds
+    *msl = (u - AXLE_LENGTH * w / 2.0) * (1000.0 / WHEEL_RADIUS);
+    *msr = (u + AXLE_LENGTH * w / 2.0) * (1000.0 / WHEEL_RADIUS);
+
+    // Apply limits to avoid excessive speeds
+    limit(msl, MAX_SPEED);
+    limit(msr, MAX_SPEED);
+
+    // Debugging information
+    printf("Robot: %d, X : %f, Y : %f\n", robot_id, X_next[robot_id][0], X_next[robot_id][1]);
+    printf("Range: %f, U: %f, Bearing: %f, W: %f\n", range, u, radToDeg(bearing), w);
 }
+
+
 
 /*
  * Updates robot position with wheel speeds
@@ -537,14 +557,14 @@ int main(){
 
 	int exited_count = 0;
 	for (int i = 0; i < FLOCK_SIZE; i++) {
-		if (loc[i][0] > 1.8) {
+		if (loc[i][0] > 2.4) {
 			exited_count++; // Increment count if robot has passed x = 0.3
 		}
 	}
 
 	if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
 		strcpy(Controller, "reynold");
-		printf("Switched to Reynold\n");
+		printf("Switched to Reynold, new migration point : %f, %f\n", migr[0], migr[1]);
 	}
 
 	// Controller logic
