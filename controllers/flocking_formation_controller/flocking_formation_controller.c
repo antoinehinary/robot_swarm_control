@@ -65,6 +65,7 @@ float prev_loc[FLOCK_SIZE][3]; // Previous X, Y, Theta values
 float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
+float final_migration[2] = {4, 1.6}; // Migration vector
 int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 double X_next[FLOCK_SIZE][2];
@@ -314,8 +315,8 @@ void laplacian_rules(int *msl, int *msr) {
     limit(msr, MAX_SPEED);
 
     // Debugging information
-    printf("Robot: %d, X : %f, Y : %f\n", robot_id, X_next[robot_id][0], X_next[robot_id][1]);
-    printf("Range: %f, U: %f, Bearing: %f, W: %f\n", range, u, radToDeg(bearing), w);
+    // printf("Robot: %d, X : %f, Y : %f\n", robot_id, X_next[robot_id][0], X_next[robot_id][1]);
+    // printf("Range: %f, U: %f, Bearing: %f, W: %f\n", range, u, radToDeg(bearing), w);
 }
 
 
@@ -462,6 +463,7 @@ int main(){
 	char *inbuffer;			// Buffer for the receiver node
 	int max_sens;			// Store highest sensor value
 	char outbuffer[255];
+	int switched = 0;
 
  	reset();			// Resetting the robot
 	initial_pos();			// Initializing the robot's position
@@ -553,31 +555,34 @@ int main(){
 	if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
 		strcpy(Controller, "laplace");
 		printf("Switched to Laplace\n");
+		switched = 1;
 	}
 
 	int exited_count = 0;
 	for (int i = 0; i < FLOCK_SIZE; i++) {
-		if (loc[i][0] > 2.4) {
+		if (loc[i][0] > 2.5) {
 			exited_count++; // Increment count if robot has passed x = 0.3
 		}
 	}
 
 	if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
 		strcpy(Controller, "reynold");
-		printf("Switched to Reynold, new migration point : %f, %f\n", migr[0], migr[1]);
+		printf("Robot %d switched to Reynold, new migration point : %f, %f\n", robot_id, migr[0], migr[1]);
 	}
 
 	// Controller logic
 	if (strcmp(Controller, "reynold") == 0) {
 		// Apply Reynold's rules
 		reynolds_rules();
-		// printf("Applying REYNOLD rules\n");
-
 		// Compute wheels speed from Reynold's speed
 		compute_wheel_speeds(&msl, &msr);
+
+		if(switched == 1){
+			printf("Robot %d has position : %f, %f\n", robot_id, loc[robot_id][0], loc[robot_id][1]);
+		}
 	} else if (strcmp(Controller, "laplace") == 0) {
 		// Placeholder for Laplace rules
-		migr[0] = 4.3; // Migration vector
+		migr[0] = 4; // Migration vector
 		migr[1] = 1.6;
 		laplacian_rules(&msl, &msr); // Replace with laplacian_rules() when implemented
 		// printf("Applying Laplacian rules\n");
@@ -601,6 +606,20 @@ int main(){
 
 	limitf(&msl_w, MAX_SPEED_WEB);
 	limitf(&msr_w, MAX_SPEED_WEB);
+
+	int final_count = 0;
+	for (int i = 0; i < FLOCK_SIZE; i++) {
+		double final_dist = sqrt((loc[i][0] - final_migration[0]) * (loc[i][0] - final_migration[0]) + (loc[i][1] - final_migration[1]) * (loc[i][1] - final_migration[1]));
+		if (final_dist < 0.5) {
+			final_count++;
+		}
+	}
+
+	if (final_count == FLOCK_SIZE) {
+		msl_w = 0;
+		msr_w = 0;
+		printf("All robots have reached the final destination\n");
+	}
 
 	wb_motor_set_velocity(left_motor, msl_w);
 	wb_motor_set_velocity(right_motor, msr_w);
