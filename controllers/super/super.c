@@ -520,8 +520,7 @@ void calc_fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], 
 
     for(int i = 0; i < FLOCK_SIZE; i++) {
         fit[i] = m_fl_t;
-    }
-    
+    }    
 }
 
 void fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], int neighbors[SWARMSIZE][SWARMSIZE]) {
