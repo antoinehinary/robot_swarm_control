@@ -51,6 +51,7 @@ double RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
 double DISTANCE_ROBOT=0.1;		 //separation distance between robots
 
 #define DATASIZE 4		  // Size of data array per particle
+char tag[10];
 
 
 #define degToRad(angleInDegrees) ((angleInDegrees) * M_PI / 180.0)
@@ -444,12 +445,19 @@ void initial_pos(void){
 	while (initialized[robot_id] == 0) {
 		
 		// wait for message
+		printf("Waiting for initialization\n");
 		while (wb_receiver_get_queue_length(receiver) == 0)	wb_robot_step(TIME_STEP);
+		printf("Robot %d initialized\n", robot_id);
 		
-		wb_receiver_set_channel(receiver, 0);
+		//wb_receiver_set_channel(receiver, 0);
 		inbuffer = (char*) wb_receiver_get_data(receiver);
-		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
+		sscanf(inbuffer,"%[^#]#",tag);
+		printf("tag: %s\n", tag);
 
+
+		if(strcmp(tag,"INIT")==0) {
+			//sscanf(inbuffer,"INIT%d#%f#%f#%f#%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
+		}
     	// robot_nb %= FLOCK_SIZE;
 		if (rob_nb == robot_id) {
 			// Initialize self position
@@ -593,16 +601,16 @@ int main(){
 		max_sens = 0;
 
 		// get info from other robots
-		wb_receiver_set_channel(receiver, 2);
-		if(wb_receiver_get_queue_length(receiver) > 0)
-		{
-			inbuffer = (char*) wb_receiver_get_data(receiver);
-			sscanf(inbuffer,"%d#%lf#%lf#%lf",&robot_id,&RULE1_WEIGHT,&RULE2_WEIGHT,&RULE3_WEIGHT);
-			printf("Weights received: %f, %f, %f\n", RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
-			RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
-			RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
-			RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
-		}
+		// wb_receiver_set_channel(receiver, 2);
+		// if(wb_receiver_get_queue_length(receiver) > 0)
+		// {
+		// 	inbuffer = (char*) wb_receiver_get_data(receiver);
+		// 	sscanf(inbuffer,"%d#%lf#%lf#%lf",&robot_id,&RULE1_WEIGHT,&RULE2_WEIGHT,&RULE3_WEIGHT);
+		// 	printf("Weights received: %f, %f, %f\n", RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
+		// 	RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
+		// 	RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
+		// 	RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
+		// }
 
 		/* Braitenberg */
 		for(i=0;i<NB_SENSORS;i++) {
@@ -621,7 +629,7 @@ int main(){
 
 		/* Get information */
 		int count = 0;
-		wb_receiver_set_channel(receiver, 1);
+		// wb_receiver_set_channel(receiver, 1);
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
 			// get info from other robots

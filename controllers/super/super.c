@@ -251,8 +251,8 @@ void send_init_poses(void) {
         prev_loc[i][1] = loc[i][1];
 
         // Send initial position and migration vector to FLOCK_SIZE
-        sprintf(buffer, "%1d#%f#%f#%f##%f#%f", i, loc[i][0], loc[i][1], loc[i][2], migrx, migry);
-        wb_emitter_set_channel(emitter, 0);
+        sprintf(buffer, "INIT#%1d#%f#%f#%f#%f#%f", i, loc[i][0], loc[i][1], loc[i][2], migrx, migry);
+        //wb_emitter_set_channel(emitter, 0);
         wb_emitter_send(emitter, buffer, strlen(buffer));
     }
 
@@ -513,8 +513,8 @@ void calc_fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], 
 
     for (int i = 0; i < FLOCK_SIZE; i++) {
         // Send initial position and migration vector to FLOCK_SIZE
-        sprintf(buffer, "%1d#%f#%f#%f", i, weights[i][0], weights[i][1], weights[i][2]);
-        wb_emitter_set_channel(emitter, 2);
+        sprintf(buffer, "WEIGHT%1d#%f#%f#%f", i, weights[i][0], weights[i][1], weights[i][2]);
+        //wb_emitter_set_channel(emitter, 2);
         wb_emitter_send(emitter, buffer, strlen(buffer));
     }
 
