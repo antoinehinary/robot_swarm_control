@@ -20,6 +20,7 @@
 #include <webots/gps.h>
 #include <webots/inertial_unit.h>
 
+#define V_MAX 0.1288          // Maximum speed of a robot
 #define NB_SENSORS      8       // Number of distance sensors
 #define MIN_SENS        60      // Minimum sensibility value
 #define MAX_SENS        250     // Maximum sensibility value
@@ -32,10 +33,10 @@
 #define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
 #define DELTA_T         0.064   // Timestep (seconds)
 #define RULE1_THRESHOLD 0.2    // Threshold to activate aggregation rule. default 0.20
-#define RULE1_WEIGHT    (0.6/10)// Weight of aggregation rule. default 0.6/10
+
 #define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
-#define RULE2_WEIGHT    (0.02/10)// Weight of dispersion rule. default 0.02/10
-#define RULE3_WEIGHT    (1.0/10)// Weight of alignment rule. default 1.0/10
+
+
 #define MIGRATION_WEIGHT (0.01/10)// Wheight of attraction towards the common goal. default 0.01/10
 #define MIGRATORY_URGE 1         // Tells the robots if they should just go forward or move towards a specific migratory direction
 #define NEIGHBOURHOOD 1          // Tells the robot considering neighbors or all robots during flocking
@@ -43,6 +44,16 @@
 #define INTER_VEHICLE_COM 1      // Set 1 if there is intervehicle communication
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
+
+
+
+double RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
+double RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
+double RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
+double DISTANCE_ROBOT=0.1;		 //separation distance between robots
+
+#define DATASIZE 4		  // Size of data array per particle
+
 
 #define USE_IMU
 
@@ -426,6 +437,102 @@ void initial_pos(void){
 	}
 }
 
+
+// Find the fitness for obstacle avoidance of the passed controller
+double fitfunc(double weights[DATASIZE],int its) {
+    //double left_speed,right_speed; // Wheel speeds
+    //double old_left, old_right; // Previous wheel speeds (for recursion)
+
+	RULE1_WEIGHT = weights[0];
+    RULE2_WEIGHT = weights[1];
+    RULE3_WEIGHT = weights[2];
+    DISTANCE_ROBOT = weights[3];
+
+    // Fitness variables
+    double fitness=0;             // Fitness of controller
+	
+	//wb_robot_step(128); // run two steps ????????????????
+	//update_position();?????????????????needed ?
+    // Evaluate fitness repeatedly
+    for (int j=0;j<its;j++) {
+		float o_t = 0.0, d_t = 0.0, v_t = 0.0;
+		//orientation
+
+		float o_t_real = 0, o_t_imag = 0;
+    	for (int i = 0; i < FLOCK_SIZE; i++) {
+			float angle = loc[i][2];
+			o_t_real += cos(angle);
+			o_t_imag += sin(angle);
+		}
+    	o_t=sqrt(o_t_real * o_t_real + o_t_imag * o_t_imag) / FLOCK_SIZE;
+
+		//distance
+		float com_x = 0.0, com_y = 0.0;
+
+		// Step 1: Calculate the center of mass (COM) of the flock
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			com_x += loc[i][0];  // Sum up all x-coordinates
+			com_y += loc[i][1];  // Sum up all y-coordinates
+		}
+		com_x /= FLOCK_SIZE;  // Average x-coordinate
+		com_y /= FLOCK_SIZE;  // Average y-coordinate
+
+		// Step 2: Compute the deviation of each robot's distance from the COM
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			float dist = sqrtf(powf(loc[i][0] - com_x, 2) + powf(loc[i][1] - com_y, 2)); // Distance to COM
+			d_t += fabs(dist - RULE1_THRESHOLD); // Deviation from the threshold
+		}
+
+   		 // Step 3: Normalize the result and apply the final formula
+   		 d_t=1.0 / (1.0 + (d_t / FLOCK_SIZE));
+
+		//velocity
+		com_x = 0.0;
+		com_y = 0.0;
+		float prev_com_x = 0.0, prev_com_y = 0.0;
+
+		// Step 1: Calculate the COM at the current time step
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			com_x += loc[i][0];
+			com_y += loc[i][1];
+		}
+		com_x /= FLOCK_SIZE;
+		com_y /= FLOCK_SIZE;
+
+		// Step 2: Calculate the COM at the previous time step
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			prev_com_x += prev_loc[i][0];
+			prev_com_y += prev_loc[i][1];
+		}
+		prev_com_x /= FLOCK_SIZE;
+		prev_com_y /= FLOCK_SIZE;
+
+		// Step 3: Compute the velocity of the COM
+		float vel_x = (com_x - prev_com_x) / DELTA_T; // Velocity in x-direction
+		float vel_y = (com_y - prev_com_y) / DELTA_T; // Velocity in y-direction
+
+		// Step 4: Compute the projection onto the migration direction
+
+		float migrx = 0.8, migry = 1.6;  // Migration vector !!! HARDCODED !!!
+
+
+		float flock_migrx = migrx - com_x;
+		float flock_migry = migry - com_y;
+		float migration_magnitude = sqrtf(flock_migrx * flock_migrx + flock_migry * flock_migry); // Magnitude of migration vector
+		float proj_migr = (vel_x * flock_migrx + vel_y * flock_migry) / migration_magnitude;
+
+		// Step 5: Normalize the projection and ensure it is non-negative
+		v_t =fmax(proj_migr, 0) / V_MAX;
+
+        fitness += o_t * d_t * v_t;
+
+    
+    }
+	fitness /= its;
+    return fitness;
+}
+
+
 /*
  * Main function
  */
@@ -507,93 +614,95 @@ int main(){
 			wb_receiver_next_packet(receiver);
 		}
 
-	// Compute self position & speed
-	prev_loc[robot_id][0] = loc[robot_id][0];
-	prev_loc[robot_id][1] = loc[robot_id][1];
+		// Compute self position & speed
+		prev_loc[robot_id][0] = loc[robot_id][0];
+		prev_loc[robot_id][1] = loc[robot_id][1];
 
-  	update_position();
+		update_position();
 
-	update_self_motion(msl,msr);
+		update_self_motion(msl,msr);
+		inbuffer = (char*) wb_receiver_get_data(receiver);
+		sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
 
-	speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
-	speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
-	
-	if (loc[robot_id][0] > 0.4){
-		arrived[robot_id] = 1;
-	}
-
-	int arrived_count = 0;
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		if ((loc[i][0] > 0.3) & (loc[i][0] < 1.5)) {
-			arrived_count++; // Increment count if robot has passed x = 0.3
-		}
-	}
-
-	// If all robots have passed x = 0.3, switch controller
-	if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
-		strcpy(Controller, "laplace");
-		printf("Switched to Laplace\n");
-	}
-
-	int exited_count = 0;
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		if (loc[i][0] > 1.8) {
-			exited_count++; // Increment count if robot has passed x = 0.3
-		}
-	}
-
-	if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
-		strcpy(Controller, "reynold");
-		printf("Switched to Reynold\n");
-	}
-
-	// Controller logic
-	if (strcmp(Controller, "reynold") == 0) {
-		// Apply Reynold's rules
-		reynolds_rules();
-		// printf("Applying REYNOLD rules\n");
-
-		// Compute wheels speed from Reynold's speed
-		compute_wheel_speeds(&msl, &msr);
-	} else if (strcmp(Controller, "laplace") == 0) {
-		// Placeholder for Laplace rules
-		migr[0] = 4.3; // Migration vector
-		migr[1] = 1.6;
-		laplacian_rules(&msl, &msr); // Replace with laplacian_rules() when implemented
-		// printf("Applying Laplacian rules\n");
-	}
-	
-	if(strcmp(Controller, "reynold") == 0){
-		// Adapt speed instinct to distance sensor values
-		if (sum_sensors > NB_SENSORS*MIN_SENS) {
-			msl -= msl*max_sens/(2*MAX_SENS);
-			msr -= msr*max_sens/(2*MAX_SENS);
+		speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
+		speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
+		
+		if (loc[robot_id][0] > 0.4){
+			arrived[robot_id] = 1;
 		}
 
-		// Add Braitenberg
-		msl += bmsl;
-		msr += bmsr;
+		int arrived_count = 0;
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			if ((loc[i][0] > 0.3) & (loc[i][0] < 1.5)) {
+				arrived_count++; // Increment count if robot has passed x = 0.3
+			}
+		}
+
+		// If all robots have passed x = 0.3, switch controller
+		if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
+			strcpy(Controller, "laplace");
+			printf("Switched to Laplace\n");
+		}
+
+		int exited_count = 0;
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			if (loc[i][0] > 1.8) {
+				exited_count++; // Increment count if robot has passed x = 0.3
+			}
+		}
+
+		if (exited_count == FLOCK_SIZE && strcmp(Controller, "laplace") == 0) {
+			strcpy(Controller, "reynold");
+			printf("Switched to Reynold\n");
+		}
+
+		// Controller logic
+		if (strcmp(Controller, "reynold") == 0) {
+			// Apply Reynold's rules
+			reynolds_rules();
+			// printf("Applying REYNOLD rules\n");
+
+			// Compute wheels speed from Reynold's speed
+			compute_wheel_speeds(&msl, &msr);
+		} else if (strcmp(Controller, "laplace") == 0) {
+			// Placeholder for Laplace rules
+			migr[0] = 4.3; // Migration vector
+			migr[1] = 1.6;
+			laplacian_rules(&msl, &msr); // Replace with laplacian_rules() when implemented
+			// printf("Applying Laplacian rules\n");
+		}
+		
+		if(strcmp(Controller, "reynold") == 0){
+			// Adapt speed instinct to distance sensor values
+			if (sum_sensors > NB_SENSORS*MIN_SENS) {
+				msl -= msl*max_sens/(2*MAX_SENS);
+				msr -= msr*max_sens/(2*MAX_SENS);
+			}
+
+			// Add Braitenberg
+			msl += bmsl;
+			msr += bmsr;
+		}
+
+		// Set speed
+		msl_w = msl*MAX_SPEED_WEB/1000;
+		msr_w = msr*MAX_SPEED_WEB/1000;
+
+		limitf(&msl_w, MAX_SPEED_WEB);
+		limitf(&msr_w, MAX_SPEED_WEB);
+
+		wb_motor_set_velocity(left_motor, msl_w);
+		wb_motor_set_velocity(right_motor, msr_w);
+
+		// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
+		/*Implement your code here*/
+		if (INTER_VEHICLE_COM) {
+			sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
+			wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
+		}
+
+		// Continue one step
+		wb_robot_step(TIME_STEP);
 	}
-
-	// Set speed
-	msl_w = msl*MAX_SPEED_WEB/1000;
-	msr_w = msr*MAX_SPEED_WEB/1000;
-
-	limitf(&msl_w, MAX_SPEED_WEB);
-	limitf(&msr_w, MAX_SPEED_WEB);
-
-	wb_motor_set_velocity(left_motor, msl_w);
-	wb_motor_set_velocity(right_motor, msr_w);
-
-	// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
-	/*Implement your code here*/
-	if (INTER_VEHICLE_COM) {
-		sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
-		wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
-	}
-
-	// Continue one step
-	wb_robot_step(TIME_STEP);
-}
 }  
 
