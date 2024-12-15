@@ -401,12 +401,11 @@ int main(int argc, char *args[]) {
 
     bestfit = 0.0;
 
-
     int time = 0;
     int iteration = 0;
     while (wb_robot_step(TIME_STEP) != -1 && iteration < MAX_ITER) {
 
-        weights = pso(SWARMSIZE,1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
+        // weights = pso(SWARMSIZE,1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
     
         for (int i = 0; i < DATASIZE; i++) {
             w[0][i] = weights[i];  // Copy PSO output to weights array

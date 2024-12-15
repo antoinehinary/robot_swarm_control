@@ -428,8 +428,6 @@ void update_position() {
     //        robot_id, loc[robot_id][0], loc[robot_id][1], loc[robot_id][2]);
 }
 
-
-
 /*
  * Initialize robot's position
  */
@@ -441,19 +439,15 @@ void initial_pos(void){
 	
 	while (initialized[robot_id] == 0) {
 		
-		// // wait for message
-		// while (wb_receiver_get_queue_length(receiver) == 0)	
-		// {
-		// 	wb_robot_step(TIME_STEP);
-		// 	printf("waiting\n");
-		// }
+		// wait for message
+		while (wb_receiver_get_queue_length(receiver) == 0) wb_robot_step(TIME_STEP);
 		
 		inbuffer = (char*) wb_receiver_get_data(receiver);
 		// Parse the message type first
     	sscanf(inbuffer, "%4s#", message_type);
 		 // Handle initialization messages
     	if (strcmp(message_type, INIT_MESSAGE) == 0) {
-			printf("MESSAGE type Should be INIT and message is : %s and Robot number is %d\n", message_type, rob_nb);
+			// printf("MESSAGE type Should be INIT and message is : %s and Robot number is %d\n", message_type, rob_nb);
 			sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
 
 			// robot_nb %= FLOCK_SIZE;
