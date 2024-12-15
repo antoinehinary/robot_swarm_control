@@ -45,8 +45,6 @@
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
 
-
-
 double RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
 double RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
 double RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
@@ -63,8 +61,16 @@ double DISTANCE_ROBOT=0.1;		 //separation distance between robots
 WbDeviceTag left_motor; //handler for left wheel of the robot
 WbDeviceTag right_motor; //handler for the right wheel of the robot
 WbDeviceTag ds[NB_SENSORS]; // Handle for the infrared distance sensors
+
+/*
+channel documentation 
+0: initial positions and migration vector
+1: intervehicle communication (postion & angles)
+2: PSO updatedd weights
+ */ 
 WbDeviceTag receiver;     // Handle for the receiver node
 WbDeviceTag emitter;      // Handle for the emitter node
+
 WbDeviceTag gps;      // Handle for the gps node
 WbDeviceTag imu;      // Handle for the imu node
 
@@ -440,9 +446,9 @@ void initial_pos(void){
 		// wait for message
 		while (wb_receiver_get_queue_length(receiver) == 0)	wb_robot_step(TIME_STEP);
 		
+		wb_receiver_set_channel(receiver, 0);
 		inbuffer = (char*) wb_receiver_get_data(receiver);
 		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
-		// Only info about self will be taken into account at first.
 
     	// robot_nb %= FLOCK_SIZE;
 		if (rob_nb == robot_id) {
@@ -459,99 +465,99 @@ void initial_pos(void){
 }
 
 
-// Find the fitness for obstacle avoidance of the passed controller
-double fitfunc(double weights[DATASIZE],int its) {
-    //double left_speed,right_speed; // Wheel speeds
-    //double old_left, old_right; // Previous wheel speeds (for recursion)
+// // Find the fitness for obstacle avoidance of the passed controller
+// double fitfunc(double weights[DATASIZE],int its) {
+//     //double left_speed,right_speed; // Wheel speeds
+//     //double old_left, old_right; // Previous wheel speeds (for recursion)
 
-	RULE1_WEIGHT = weights[0];
-    RULE2_WEIGHT = weights[1];
-    RULE3_WEIGHT = weights[2];
-    DISTANCE_ROBOT = weights[3];
+// 	RULE1_WEIGHT = weights[0];
+//     RULE2_WEIGHT = weights[1];
+//     RULE3_WEIGHT = weights[2];
+//     DISTANCE_ROBOT = weights[3];
 
-    // Fitness variables
-    double fitness=0;             // Fitness of controller
+//     // Fitness variables
+//     double fitness=0;             // Fitness of controller
 	
-	//wb_robot_step(128); // run two steps ????????????????
-	//update_position();?????????????????needed ?
-    // Evaluate fitness repeatedly
-    for (int j=0;j<its;j++) {
-		float o_t = 0.0, d_t = 0.0, v_t = 0.0;
-		//orientation
+// 	//wb_robot_step(128); // run two steps ????????????????
+// 	//update_position();?????????????????needed ?
+//     // Evaluate fitness repeatedly
+//     for (int j=0;j<its;j++) {
+// 		float o_t = 0.0, d_t = 0.0, v_t = 0.0;
+// 		//orientation
 
-		float o_t_real = 0, o_t_imag = 0;
-    	for (int i = 0; i < FLOCK_SIZE; i++) {
-			float angle = loc[i][2];
-			o_t_real += cos(angle);
-			o_t_imag += sin(angle);
-		}
-    	o_t=sqrt(o_t_real * o_t_real + o_t_imag * o_t_imag) / FLOCK_SIZE;
+// 		float o_t_real = 0, o_t_imag = 0;
+//     	for (int i = 0; i < FLOCK_SIZE; i++) {
+// 			float angle = loc[i][2];
+// 			o_t_real += cos(angle);
+// 			o_t_imag += sin(angle);
+// 		}
+//     	o_t=sqrt(o_t_real * o_t_real + o_t_imag * o_t_imag) / FLOCK_SIZE;
 
-		//distance
-		float com_x = 0.0, com_y = 0.0;
+// 		//distance
+// 		float com_x = 0.0, com_y = 0.0;
 
-		// Step 1: Calculate the center of mass (COM) of the flock
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			com_x += loc[i][0];  // Sum up all x-coordinates
-			com_y += loc[i][1];  // Sum up all y-coordinates
-		}
-		com_x /= FLOCK_SIZE;  // Average x-coordinate
-		com_y /= FLOCK_SIZE;  // Average y-coordinate
+// 		// Step 1: Calculate the center of mass (COM) of the flock
+// 		for (int i = 0; i < FLOCK_SIZE; i++) {
+// 			com_x += loc[i][0];  // Sum up all x-coordinates
+// 			com_y += loc[i][1];  // Sum up all y-coordinates
+// 		}
+// 		com_x /= FLOCK_SIZE;  // Average x-coordinate
+// 		com_y /= FLOCK_SIZE;  // Average y-coordinate
 
-		// Step 2: Compute the deviation of each robot's distance from the COM
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			float dist = sqrtf(powf(loc[i][0] - com_x, 2) + powf(loc[i][1] - com_y, 2)); // Distance to COM
-			d_t += fabs(dist - RULE1_THRESHOLD); // Deviation from the threshold
-		}
+// 		// Step 2: Compute the deviation of each robot's distance from the COM
+// 		for (int i = 0; i < FLOCK_SIZE; i++) {
+// 			float dist = sqrtf(powf(loc[i][0] - com_x, 2) + powf(loc[i][1] - com_y, 2)); // Distance to COM
+// 			d_t += fabs(dist - RULE1_THRESHOLD); // Deviation from the threshold
+// 		}
 
-   		 // Step 3: Normalize the result and apply the final formula
-   		 d_t=1.0 / (1.0 + (d_t / FLOCK_SIZE));
+//    		 // Step 3: Normalize the result and apply the final formula
+//    		 d_t=1.0 / (1.0 + (d_t / FLOCK_SIZE));
 
-		//velocity
-		com_x = 0.0;
-		com_y = 0.0;
-		float prev_com_x = 0.0, prev_com_y = 0.0;
+// 		//velocity
+// 		com_x = 0.0;
+// 		com_y = 0.0;
+// 		float prev_com_x = 0.0, prev_com_y = 0.0;
 
-		// Step 1: Calculate the COM at the current time step
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			com_x += loc[i][0];
-			com_y += loc[i][1];
-		}
-		com_x /= FLOCK_SIZE;
-		com_y /= FLOCK_SIZE;
+// 		// Step 1: Calculate the COM at the current time step
+// 		for (int i = 0; i < FLOCK_SIZE; i++) {
+// 			com_x += loc[i][0];
+// 			com_y += loc[i][1];
+// 		}
+// 		com_x /= FLOCK_SIZE;
+// 		com_y /= FLOCK_SIZE;
 
-		// Step 2: Calculate the COM at the previous time step
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			prev_com_x += prev_loc[i][0];
-			prev_com_y += prev_loc[i][1];
-		}
-		prev_com_x /= FLOCK_SIZE;
-		prev_com_y /= FLOCK_SIZE;
+// 		// Step 2: Calculate the COM at the previous time step
+// 		for (int i = 0; i < FLOCK_SIZE; i++) {
+// 			prev_com_x += prev_loc[i][0];
+// 			prev_com_y += prev_loc[i][1];
+// 		}
+// 		prev_com_x /= FLOCK_SIZE;
+// 		prev_com_y /= FLOCK_SIZE;
 
-		// Step 3: Compute the velocity of the COM
-		float vel_x = (com_x - prev_com_x) / DELTA_T; // Velocity in x-direction
-		float vel_y = (com_y - prev_com_y) / DELTA_T; // Velocity in y-direction
+// 		// Step 3: Compute the velocity of the COM
+// 		float vel_x = (com_x - prev_com_x) / DELTA_T; // Velocity in x-direction
+// 		float vel_y = (com_y - prev_com_y) / DELTA_T; // Velocity in y-direction
 
-		// Step 4: Compute the projection onto the migration direction
+// 		// Step 4: Compute the projection onto the migration direction
 
-		float migrx = 0.8, migry = 1.6;  // Migration vector !!! HARDCODED !!!
+// 		float migrx = 0.8, migry = 1.6;  // Migration vector !!! HARDCODED !!!
 
 
-		float flock_migrx = migrx - com_x;
-		float flock_migry = migry - com_y;
-		float migration_magnitude = sqrtf(flock_migrx * flock_migrx + flock_migry * flock_migry); // Magnitude of migration vector
-		float proj_migr = (vel_x * flock_migrx + vel_y * flock_migry) / migration_magnitude;
+// 		float flock_migrx = migrx - com_x;
+// 		float flock_migry = migry - com_y;
+// 		float migration_magnitude = sqrtf(flock_migrx * flock_migrx + flock_migry * flock_migry); // Magnitude of migration vector
+// 		float proj_migr = (vel_x * flock_migrx + vel_y * flock_migry) / migration_magnitude;
 
-		// Step 5: Normalize the projection and ensure it is non-negative
-		v_t =fmax(proj_migr, 0) / V_MAX;
+// 		// Step 5: Normalize the projection and ensure it is non-negative
+// 		v_t =fmax(proj_migr, 0) / V_MAX;
 
-        fitness += o_t * d_t * v_t;
+//         fitness += o_t * d_t * v_t;
 
     
-    }
-	fitness /= its;
-    return fitness;
-}
+//     }
+// 	fitness /= its;
+//     return fitness;
+// }
 
 
 /*
@@ -585,6 +591,19 @@ int main(){
 		bmsl = 0; bmsr = 0;
 		sum_sensors = 0;
 		max_sens = 0;
+
+		// get info from other robots
+		wb_receiver_set_channel(receiver, 2);
+		if(wb_receiver_get_queue_length(receiver) > 0)
+		{
+			inbuffer = (char*) wb_receiver_get_data(receiver);
+			sscanf(inbuffer,"%d#%lf#%lf#%lf",&robot_id,&RULE1_WEIGHT,&RULE2_WEIGHT,&RULE3_WEIGHT);
+			printf("Weights received: %f, %f, %f\n", RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
+			RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
+			RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
+			RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
+		}
+
 		/* Braitenberg */
 		for(i=0;i<NB_SENSORS;i++) {
 			distances[i]=wb_distance_sensor_get_value(ds[i]); //Read sensor values
@@ -602,10 +621,13 @@ int main(){
 
 		/* Get information */
 		int count = 0;
+		wb_receiver_set_channel(receiver, 1);
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
+			// get info from other robots
 			inbuffer = (char*) wb_receiver_get_data(receiver);
 			sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
+			printf("Robot %d: receiving\n", rob_nb);
 			
 			rob_nb %= FLOCK_SIZE;
 			if (initialized[rob_nb] == 0) {
@@ -643,8 +665,11 @@ int main(){
 		update_position();
 
 		update_self_motion(msl,msr);
-		inbuffer = (char*) wb_receiver_get_data(receiver);
-		sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
+
+		// // update information from other robots
+		// wb_receiver_set_channel(receiver, 1);
+		// inbuffer = (char*) wb_receiver_get_data(receiver);
+		// sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
 
 		speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
 		speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
@@ -732,13 +757,6 @@ int main(){
 
 		wb_motor_set_velocity(left_motor, msl_w);
 		wb_motor_set_velocity(right_motor, msr_w);
-
-		// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
-		/*Implement your code here*/
-		if (INTER_VEHICLE_COM) {
-			sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
-			wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
-		}
 
 		// Continue one step
 		wb_robot_step(TIME_STEP);

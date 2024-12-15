@@ -65,6 +65,8 @@ float loc[FLOCK_SIZE][3];        // Location of everybody in the flock
 float prev_loc[FLOCK_SIZE][2];   // Previous locations to calculate velocity
 float migrx = 0.8, migry = 1.6;  // Migration vector
 float orient_migr;               // Migration orientation
+float d_t, v_t, m_fl_t;                   // Fitness metric
+float o_t = 0.0; // Orientation alignment (only for Reynold)
 FILE *csv_file;                  // Pointer for CSV file
 FILE *Reynold1;                  // Pointer for CSV file
 FILE *Reynold2;                  // Pointer for CSV file
@@ -250,6 +252,7 @@ void send_init_poses(void) {
 
         // Send initial position and migration vector to FLOCK_SIZE
         sprintf(buffer, "%1d#%f#%f#%f##%f#%f", i, loc[i][0], loc[i][1], loc[i][2], migrx, migry);
+        wb_emitter_set_channel(emitter, 0);
         wb_emitter_send(emitter, buffer, strlen(buffer));
     }
 
@@ -298,9 +301,6 @@ float calculate_velocity_laplace() {
  * Compute performance metric and write to CSV
  */
 void log_metrics(int time) {
-    float o_t = 0.0; // Orientation alignment (only for Reynold)
-    float d_t, v_t, m_fl_t;
-
     // Compute the metrics based on the current state
     if (state == 0 || state == 2) { // Reynold mode
         o_t = calculate_orientation();
@@ -385,7 +385,7 @@ int main(int argc, char *args[]) {
     double *weights;                         // Optimized result
     double buffer[255];                      // Buffer for emitter
     double w[FLOCK_SIZE][DATASIZE];  // Declare a 2D array
-    int i,j,k;                               // Counter variables
+    // int i,j,k;                               // Counter variables
 
     orient_migr = atan2f(migry, migrx);
     if (orient_migr < 0) {
@@ -400,52 +400,53 @@ int main(int argc, char *args[]) {
     //     wb_receiver_enable(receiver[i],wb_robot_get_basic_time_step());
     // }
 
-    double fit=0.0;                        // Fitness of the current FINALRUN
-    double f[MAX_ROB];                 // Evaluated fitness (modified by calc_fitness() )
-    double bestfit, bestw[DATASIZE];
+    // double fit=0.0;                        // Fitness of the current FINALRUN
+    // double f[MAX_ROB];                 // Evaluated fitness (modified by calc_fitness())
+    // double bestfit, bestw[DATASIZE];
 
-    bestfit = 0.0;
-
+    // bestfit = 0.0;
 
     int time = 0;
-    int iteration = 0;
-    while (wb_robot_step(TIME_STEP) != -1 && iteration < MAX_ITER) {
-
-        weights = pso(SWARMSIZE,1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
+    // int iteration = 0;
+    weights = pso(SWARMSIZE,1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT, ITS, DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
     
+    while (wb_robot_step(TIME_STEP) != -1) {
+
         for (int i = 0; i < DATASIZE; i++) {
             w[0][i] = weights[i];  // Copy PSO output to weights array
         }
 
-                // Run FINALRUN tests and calculate average
-        for (i=0;i<FINALRUNS;i+=MAX_ROB) {
-        printf("final_run %d\n",i);
-        calc_fitness(w,f,FIT_ITS,MAX_ROB);
-        for (k=0;k<MAX_ROB && i+k<FINALRUNS;k++) {
-            fit += f[k];
-        }
-        }
-        fit /= FINALRUNS;
+        // // Run FINALRUN tests and calculate average
+        // for (i=0;i<FINALRUNS;i+=MAX_ROB) {
+        //     printf("final_run %d\n",i);
+        //     calc_fitness(w,f,FIT_ITS,MAX_ROB);
+        //     for (k=0;k<MAX_ROB && i+k<FINALRUNS;k++) {
+        //         fit += f[k];
+        //     }
+        // }
+        // fit /= FINALRUNS;
 
-        // Check for new best fitness
-        if (fit > bestfit) {
-            bestfit = fit;
-            for (i = 0; i < DATASIZE; i++){
-                bestw[i] = weights[i];
-            }
-        }
-        printf("Performance of the best solution: %.3f\n",fit);
-          /* Send best controller to FLOCK_SIZE */
-        for (j=0;j<DATASIZE;j++) {
-            buffer[j] = bestw[j];
-        }
-        buffer[DATASIZE] = 1000000;
-        wb_emitter_send(emitter,(void *)buffer,(DATASIZE+1)*sizeof(double));
+        // // Check for new best fitness
+        // if (fit > bestfit) {
+        //     bestfit = fit;
+        //     for (i = 0; i < DATASIZE; i++){
+        //         bestw[i] = weights[i];
+        //     }
+        // }
+        // printf("Performance of the best solution: %.3f\n",fit);
+        
+        // /* Send best controller to FLOCK_SIZE */
+        // for (j=0;j<DATASIZE;j++) {
+        //     buffer[j] = bestw[j];
+        // }
+        // buffer[DATASIZE] = 1000000;
+        // wb_emitter_send(emitter,(void *)buffer,(DATASIZE+1)*sizeof(double));
 
-        /* Wait forever */
-        while (1) wb_robot_step(wb_robot_get_basic_time_step());
+        // /* Wait forever */
+        // while (1) wb_robot_step(wb_robot_get_basic_time_step());
 
         //fin pso add
+
         //Début flocking
         // Update flock positions
         for (int i = 0; i < FLOCK_SIZE; i++) {
@@ -479,7 +480,6 @@ int main(int argc, char *args[]) {
                 printf("Switched to Reynold2 mode at Time: %d, state : %d\n", time, state);
             }
         }
-
          
         // Compute and log metrics every 10 steps
         if (time % 10 == 0) {
@@ -490,7 +490,7 @@ int main(int argc, char *args[]) {
         update_previous_positions();
 
         time += TIME_STEP;
-        iteration++;
+        // iteration++;
     }
 
     // Close the CSV file
@@ -505,30 +505,43 @@ int main(int argc, char *args[]) {
 
 // Distribute fitness functions among FLOCK_SIZE
 void calc_fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], int its, int numRobs) {
-  double buffer[255];
-  double *rbuffer;
-  int i,j;
+    double buffer[255];
+    // double *rbuffer;
+    // int i,j;
 
-//   /* Send data to FLOCK_SIZE */
-//   for (i=0;i<numRobs;i++) {
-//     random_pos(i);
-//     for (j=0;j<DATASIZE;j++) {
-//       buffer[j] = weights[i][j];
-//     }
-//     buffer[DATASIZE] = its; // set number of iterations at end of buffer
-//     wb_emitter_send(emitter[i],(void *)buffer,(DATASIZE+1)*sizeof(double));
-//   }
+    /* Send data to FLOCK_SIZE */
 
-  /* Wait for response */
-  while (wb_receiver_get_queue_length(receiver) == 0)
-    wb_robot_step(wb_robot_get_basic_time_step());
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        // Send initial position and migration vector to FLOCK_SIZE
+        sprintf(buffer, "%1d#%f#%f#%f", i, weights[i][0], weights[i][1], weights[i][2]);
+        wb_emitter_set_channel(emitter, 2);
+        wb_emitter_send(emitter, buffer, strlen(buffer));
+    }
 
-  /* Get fitness values */
-  for (i=0;i<numRobs;i++) {
-    rbuffer = (double *)wb_receiver_get_data(receiver);
-    fit[i] = rbuffer[0];
-    wb_receiver_next_packet(receiver);
-  }
+    // for (i=0;i<numRobs;i++) {
+    // random_pos(i);
+    // for (j=0;j<DATASIZE;j++) {
+    //     buffer[j] = weights[i][j];
+    // }
+    // buffer[DATASIZE] = its; // set number of iterations at end of buffer
+    // wb_emitter_send(emitter[i],(void *)buffer,(DATASIZE+1)*sizeof(double));
+    // }
+
+    // Compute the metrics based on the current state
+    if (state == 0 || state == 2) { // Reynold mode
+        o_t = calculate_orientation();
+        d_t = calculate_distance(); // Original Reynold distance metric
+        v_t = calculate_velocity(); // Original Reynold velocity metric
+        m_fl_t = o_t * d_t * v_t;   // Reynold's metric includes orientation
+    } else { // Laplace mode
+        d_t = calculate_distance_laplace(); // New Laplace distance metric
+        v_t = calculate_velocity_laplace(); // New Laplace velocity metric
+        m_fl_t = d_t * v_t;                 // Laplace's metric excludes orientation
+    }
+    for (int i = 0; i < FLOCK_SIZE; i++) {
+        fit[i] = m_fl_t;
+    } 
+
 }
 
 void fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], int neighbors[SWARMSIZE][SWARMSIZE]) {

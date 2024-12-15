@@ -16,7 +16,7 @@
 #define NB_SENSOR 8
 //#define DATASIZE 2*(NB_SENSOR+2+1)      // Number of elements in particle (2 Neurons with 8 proximity sensors
                                         // + 2 recursive/lateral conenctions + 1 bias)
-#define DATASIZE 4     // Size of data array per particle (alignment, cohesion, separation weights) 
+#define DATASIZE 3     // Size of data array per particle (alignment, cohesion, separation weights) 
 #define SWARMSIZE 10
 
 // Functions
