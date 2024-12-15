@@ -20,6 +20,7 @@
 #include <webots/gps.h>
 #include <webots/inertial_unit.h>
 
+#define V_MAX 0.1288          // Maximum speed of a robot
 #define NB_SENSORS      8       // Number of distance sensors
 #define MIN_SENS        60      // Minimum sensibility value
 #define MAX_SENS        250     // Maximum sensibility value
@@ -32,10 +33,10 @@
 #define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
 #define DELTA_T         0.064   // Timestep (seconds)
 #define RULE1_THRESHOLD 0.2    // Threshold to activate aggregation rule. default 0.20
-#define RULE1_WEIGHT    (0.6/10)// Weight of aggregation rule. default 0.6/10
+
 #define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
-#define RULE2_WEIGHT    (0.02/10)// Weight of dispersion rule. default 0.02/10
-#define RULE3_WEIGHT    (1.0/10)// Weight of alignment rule. default 1.0/10
+
+
 #define MIGRATION_WEIGHT (0.01/10)// Wheight of attraction towards the common goal. default 0.01/10
 #define MIGRATORY_URGE 1         // Tells the robots if they should just go forward or move towards a specific migratory direction
 #define NEIGHBOURHOOD 1          // Tells the robot considering neighbors or all robots during flocking
@@ -48,6 +49,16 @@
 #define radToDeg(angleInRadians) ((angleInRadians) * 180.0 / M_PI)
 
 #define DATA_MESSAGE 1
+#define WEIGHTS_MESSAGE 2
+
+
+double RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
+double RULE2_WEIGHT=0.02/10;// Weight of dispersion rule. default 0.02/10
+double RULE3_WEIGHT=1.0/10;// Weight of alignment rule. default 1.0/10
+double DISTANCE_ROBOT=0.1;		 //separation distance between robots
+
+#define DATASIZE 4		  // Size of data array per particle
+
 
 #define USE_IMU
 
@@ -68,7 +79,7 @@ float speed[FLOCK_SIZE][2]; // Speeds calculated with Reynold's rules
 int initialized[FLOCK_SIZE]; // != 0 if initial positions have been received
 float migr[2] = {0.8, 1.6}; // Migration vector
 float final_migration[2] = {4.2, 1.7}; // Migration vector
-int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
+float arrived[FLOCK_SIZE] = {0.0,0.0,0.0,0.0,0.0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 double X_next[FLOCK_SIZE][2];
 int message_type;
@@ -322,8 +333,6 @@ void laplacian_rules(int *msl, int *msr) {
     // printf("Range: %f, U: %f, Bearing: %f, W: %f\n", range, u, radToDeg(bearing), w);
 }
 
-
-
 /*
  * Updates robot position with wheel speeds
  * Used for odometry
@@ -451,6 +460,7 @@ void initial_pos(void){
 	}
 }
 
+
 /*
  * Main function
  */
@@ -463,10 +473,10 @@ int main(){
 	int rob_nb;			// Robot number
 	float rob_x, rob_y, rob_theta;  // Robot position and orientation
 	int distances[NB_SENSORS];	// Array for the distance sensor readings
-	int isthere;			// Flag for robot arrival
+	float isthere;			// Flag for robot arrival
 	char *inbuffer;			// Buffer for the receiver node
 	int max_sens;			// Store highest sensor value
-	char outbuffer[255];
+	char outbuffer[1024];
 	int switched = 0;
 
  	reset();			// Resetting the robot
@@ -502,9 +512,15 @@ int main(){
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
 			inbuffer = (char*) wb_receiver_get_data(receiver);
-			sscanf(inbuffer,"%d#%f#%f#%f#%d#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere, &message_type);
-			// printf("Robot %d received message type %d\n", robot_id, message_type);
+			sscanf(inbuffer,"%d#%f#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere, &message_type);
 			
+			if (message_type == WEIGHTS_MESSAGE) {
+				RULE1_WEIGHT = rob_x;
+				RULE2_WEIGHT = rob_y;
+				RULE3_WEIGHT = rob_theta;
+				printf("Robot %d received weights : %f, %f, %f\n", robot_id, RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
+			}
+
 			rob_nb %= FLOCK_SIZE;
 			if (initialized[rob_nb] == 0) {
 				// Get initial positions
@@ -514,7 +530,7 @@ int main(){
 				prev_loc[rob_nb][0] = loc[rob_nb][0];
 				prev_loc[rob_nb][1] = loc[rob_nb][1];
 				initialized[rob_nb] = 1;
-			} else {
+			} else if(message_type==DATA_MESSAGE) {
 				// Get position update
 				// printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
 				prev_loc[rob_nb][0] = loc[rob_nb][0];
@@ -534,27 +550,27 @@ int main(){
 			wb_receiver_next_packet(receiver);
 		}
 
-	// Compute self position & speed
-	prev_loc[robot_id][0] = loc[robot_id][0];
-	prev_loc[robot_id][1] = loc[robot_id][1];
+		// Compute self position & speed
+		prev_loc[robot_id][0] = loc[robot_id][0];
+		prev_loc[robot_id][1] = loc[robot_id][1];
 
-  	update_position();
+		update_position();
 
-	update_self_motion(msl,msr);
+		update_self_motion(msl,msr);
 
-	speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
-	speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
-	
-	if (loc[robot_id][0] > 0.4){
-		arrived[robot_id] = 1;
-	}
-
-	int arrived_count = 0;
-	for (int i = 0; i < FLOCK_SIZE; i++) {
-		if ((loc[i][0] > 0.3) & (loc[i][0] < 1.5)) {
-			arrived_count++; // Increment count if robot has passed x = 0.3
+		speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
+		speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
+		
+		if (loc[robot_id][0] > 0.4){
+			arrived[robot_id] = 1;
 		}
-	}
+
+		int arrived_count = 0;
+		for (int i = 0; i < FLOCK_SIZE; i++) {
+			if ((loc[i][0] > 0.3) & (loc[i][0] < 1.5)) {
+				arrived_count++; // Increment count if robot has passed x = 0.3
+			}
+		}
 
 	// If all robots have passed x = 0.3, switch controller
 	if (arrived_count == FLOCK_SIZE && strcmp(Controller, "reynold") == 0) {
@@ -600,14 +616,14 @@ int main(){
 			msr -= msr*max_sens/(2*MAX_SENS);
 		}
 
-		// Add Braitenberg
-		msl += bmsl;
-		msr += bmsr;
-	}
+			// Add Braitenberg
+			msl += bmsl;
+			msr += bmsr;
+		}
 
-	// Set speed
-	msl_w = msl*MAX_SPEED_WEB/1000;
-	msr_w = msr*MAX_SPEED_WEB/1000;
+		// Set speed
+		msl_w = msl*MAX_SPEED_WEB/1000;
+		msr_w = msr*MAX_SPEED_WEB/1000;
 
 	limitf(&msl_w, MAX_SPEED_WEB);
 	limitf(&msr_w, MAX_SPEED_WEB);
@@ -626,18 +642,17 @@ int main(){
 		printf("All robots have reached the final destination\n");
 	}
 
-	wb_motor_set_velocity(left_motor, msl_w);
-	wb_motor_set_velocity(right_motor, msr_w);
+		wb_motor_set_velocity(left_motor, msl_w);
+		wb_motor_set_velocity(right_motor, msr_w);
 
 	// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
-	/*Implement your code here*/
 	if (INTER_VEHICLE_COM) {
-		sprintf(outbuffer,"%1d#%f#%f#%f#%d#%1d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere, DATA_MESSAGE);
+		sprintf(outbuffer,"%1d#%f#%f#%f#%f#%1d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere, DATA_MESSAGE);
 		wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
 	}
 
-	// Continue one step
-	wb_robot_step(TIME_STEP);
-}
+		// Continue one step
+		wb_robot_step(TIME_STEP);
+	}
 }  
 
