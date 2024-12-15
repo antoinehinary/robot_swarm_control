@@ -7,7 +7,7 @@
 /*                                                */
 /**************************************************/
 
-#define VERBOSE 1
+#define VERBOSE 0
 
 #include <webots/robot.h>
 #include <webots/supervisor.h>

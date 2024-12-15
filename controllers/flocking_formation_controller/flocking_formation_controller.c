@@ -33,7 +33,6 @@
 #define WHEEL_RADIUS    0.0205  // Wheel radius (meters)
 #define DELTA_T         0.064   // Timestep (seconds)
 #define RULE1_THRESHOLD 0.2    // Threshold to activate aggregation rule. default 0.20
-
 #define RULE2_THRESHOLD 0.15    // Threshold to activate dispersion rule. default 0.15
 
 
@@ -45,6 +44,9 @@
 #define VERBOSE 0
 #define ABS(x) ((x>=0)?(x):-(x))
 
+
+#define INIT_MESSAGE "INIT"  // Tag for initialization messages
+#define DATA_MESSAGE "DATA"  // Tag for regular data messages
 
 
 double RULE1_WEIGHT=0.6/10;// Weight of aggregation rule. default 0.6/10
@@ -80,6 +82,8 @@ float final_migration[2] = {4.2, 1.7}; // Migration vector
 int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 double X_next[FLOCK_SIZE][2];
+char message_type[5];  // To hold the message type tag
+
 
 // Laplace matrix
 double L[FLOCK_SIZE][FLOCK_SIZE] = {
@@ -437,120 +441,37 @@ void initial_pos(void){
 	
 	while (initialized[robot_id] == 0) {
 		
-		// wait for message
-		while (wb_receiver_get_queue_length(receiver) == 0)	wb_robot_step(TIME_STEP);
+		// // wait for message
+		// while (wb_receiver_get_queue_length(receiver) == 0)	
+		// {
+		// 	wb_robot_step(TIME_STEP);
+		// 	printf("waiting\n");
+		// }
 		
 		inbuffer = (char*) wb_receiver_get_data(receiver);
-		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
-		// Only info about self will be taken into account at first.
+		// Parse the message type first
+    	sscanf(inbuffer, "%4s#", message_type);
+		 // Handle initialization messages
+    	if (strcmp(message_type, INIT_MESSAGE) == 0) {
+			printf("MESSAGE type Should be INIT and message is : %s and Robot number is %d\n", message_type, rob_nb);
+			sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
 
-    	// robot_nb %= FLOCK_SIZE;
-		if (rob_nb == robot_id) {
-			// Initialize self position
-			loc[rob_nb][0] = rob_x; 		// x-position
-			loc[rob_nb][1] = rob_y; 		// y-position
-			loc[rob_nb][2] = rob_theta; 		// theta
-			prev_loc[rob_nb][0] = loc[rob_nb][0];
-			prev_loc[rob_nb][1] = loc[rob_nb][1];
-			initialized[rob_nb] = 1; 		// initialized = true
-		}		
-		wb_receiver_next_packet(receiver);
+			// robot_nb %= FLOCK_SIZE;
+			if (rob_nb == robot_id) {
+				// Initialize self position
+				loc[rob_nb][0] = rob_x; 		// x-position
+				loc[rob_nb][1] = rob_y; 		// y-position
+				loc[rob_nb][2] = rob_theta; 		// theta
+				prev_loc[rob_nb][0] = loc[rob_nb][0];
+				prev_loc[rob_nb][1] = loc[rob_nb][1];
+				initialized[rob_nb] = 1; 		// initialized = true
+				printf("Robot %d is initialized\n", robot_id);
+			}		
+			wb_receiver_next_packet(receiver);
+		} else {
+			printf("Message type not recognized\n");
+		}
 	}
-}
-
-
-// Find the fitness for obstacle avoidance of the passed controller
-double fitfunc(double weights[DATASIZE],int its) {
-    //double left_speed,right_speed; // Wheel speeds
-    //double old_left, old_right; // Previous wheel speeds (for recursion)
-
-	RULE1_WEIGHT = weights[0];
-    RULE2_WEIGHT = weights[1];
-    RULE3_WEIGHT = weights[2];
-    DISTANCE_ROBOT = weights[3];
-
-    // Fitness variables
-    double fitness=0;             // Fitness of controller
-	
-	//wb_robot_step(128); // run two steps ????????????????
-	//update_position();?????????????????needed ?
-    // Evaluate fitness repeatedly
-    for (int j=0;j<its;j++) {
-		float o_t = 0.0, d_t = 0.0, v_t = 0.0;
-		//orientation
-
-		float o_t_real = 0, o_t_imag = 0;
-    	for (int i = 0; i < FLOCK_SIZE; i++) {
-			float angle = loc[i][2];
-			o_t_real += cos(angle);
-			o_t_imag += sin(angle);
-		}
-    	o_t=sqrt(o_t_real * o_t_real + o_t_imag * o_t_imag) / FLOCK_SIZE;
-
-		//distance
-		float com_x = 0.0, com_y = 0.0;
-
-		// Step 1: Calculate the center of mass (COM) of the flock
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			com_x += loc[i][0];  // Sum up all x-coordinates
-			com_y += loc[i][1];  // Sum up all y-coordinates
-		}
-		com_x /= FLOCK_SIZE;  // Average x-coordinate
-		com_y /= FLOCK_SIZE;  // Average y-coordinate
-
-		// Step 2: Compute the deviation of each robot's distance from the COM
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			float dist = sqrtf(powf(loc[i][0] - com_x, 2) + powf(loc[i][1] - com_y, 2)); // Distance to COM
-			d_t += fabs(dist - RULE1_THRESHOLD); // Deviation from the threshold
-		}
-
-   		 // Step 3: Normalize the result and apply the final formula
-   		 d_t=1.0 / (1.0 + (d_t / FLOCK_SIZE));
-
-		//velocity
-		com_x = 0.0;
-		com_y = 0.0;
-		float prev_com_x = 0.0, prev_com_y = 0.0;
-
-		// Step 1: Calculate the COM at the current time step
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			com_x += loc[i][0];
-			com_y += loc[i][1];
-		}
-		com_x /= FLOCK_SIZE;
-		com_y /= FLOCK_SIZE;
-
-		// Step 2: Calculate the COM at the previous time step
-		for (int i = 0; i < FLOCK_SIZE; i++) {
-			prev_com_x += prev_loc[i][0];
-			prev_com_y += prev_loc[i][1];
-		}
-		prev_com_x /= FLOCK_SIZE;
-		prev_com_y /= FLOCK_SIZE;
-
-		// Step 3: Compute the velocity of the COM
-		float vel_x = (com_x - prev_com_x) / DELTA_T; // Velocity in x-direction
-		float vel_y = (com_y - prev_com_y) / DELTA_T; // Velocity in y-direction
-
-		// Step 4: Compute the projection onto the migration direction
-
-		float migrx = 0.8, migry = 1.6;  // Migration vector !!! HARDCODED !!!
-
-
-		float flock_migrx = migrx - com_x;
-		float flock_migry = migry - com_y;
-		float migration_magnitude = sqrtf(flock_migrx * flock_migrx + flock_migry * flock_migry); // Magnitude of migration vector
-		float proj_migr = (vel_x * flock_migrx + vel_y * flock_migry) / migration_magnitude;
-
-		// Step 5: Normalize the projection and ensure it is non-negative
-		v_t =fmax(proj_migr, 0) / V_MAX;
-
-        fitness += o_t * d_t * v_t;
-
-    
-    }
-	fitness /= its;
-    return fitness;
 }
 
 
@@ -605,35 +526,43 @@ int main(){
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
 			inbuffer = (char*) wb_receiver_get_data(receiver);
-			sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
-			
-			rob_nb %= FLOCK_SIZE;
-			if (initialized[rob_nb] == 0) {
-				// Get initial positions
-				loc[rob_nb][0] = rob_x; //x-position
-				loc[rob_nb][1] = rob_y; //y-position
-				loc[rob_nb][2] = rob_theta; //theta
-				prev_loc[rob_nb][0] = loc[rob_nb][0];
-				prev_loc[rob_nb][1] = loc[rob_nb][1];
-				initialized[rob_nb] = 1;
-			} else {
-				// Get position update
-				// printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
-				prev_loc[rob_nb][0] = loc[rob_nb][0];
-				prev_loc[rob_nb][1] = loc[rob_nb][1];
-				loc[rob_nb][0] = rob_x; //x-position
-				loc[rob_nb][1] = rob_y; //y-position
-				loc[rob_nb][2] = rob_theta; //theta
-			}
-			
-			speed[rob_nb][0] = (1/DELTA_T)*(loc[rob_nb][0]-prev_loc[rob_nb][0]);
-			speed[rob_nb][1] = (1/DELTA_T)*(loc[rob_nb][1]-prev_loc[rob_nb][1]);
-		
-			arrived[rob_nb] = isthere;
-			
-			count++;
+			// Parse the message type first
+			sscanf(inbuffer, "%4s#", message_type);
+			printf("Message type Should be DATA and message is : %s\n", message_type);
+    		if (strcmp(message_type, DATA_MESSAGE) == 0) {
+				sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
 
-			wb_receiver_next_packet(receiver);
+				rob_nb %= FLOCK_SIZE;
+				if (initialized[rob_nb] == 0) {
+					// Get initial positions
+					loc[rob_nb][0] = rob_x; //x-position
+					loc[rob_nb][1] = rob_y; //y-position
+					loc[rob_nb][2] = rob_theta; //theta
+					prev_loc[rob_nb][0] = loc[rob_nb][0];
+					prev_loc[rob_nb][1] = loc[rob_nb][1];
+					initialized[rob_nb] = 1;
+				} else {
+					// Get position update
+					// printf("\n Robot [%d] got update robot[%d] = (%f,%f) \n",robot_id, rob_nb,loc[rob_nb][0],loc[rob_nb][1]);
+					prev_loc[rob_nb][0] = loc[rob_nb][0];
+					prev_loc[rob_nb][1] = loc[rob_nb][1];
+					loc[rob_nb][0] = rob_x; //x-position
+					loc[rob_nb][1] = rob_y; //y-position
+					loc[rob_nb][2] = rob_theta; //theta
+				}
+				
+				speed[rob_nb][0] = (1/DELTA_T)*(loc[rob_nb][0]-prev_loc[rob_nb][0]);
+				speed[rob_nb][1] = (1/DELTA_T)*(loc[rob_nb][1]-prev_loc[rob_nb][1]);
+			
+				arrived[rob_nb] = isthere;
+				
+				count++;
+
+				wb_receiver_next_packet(receiver);
+			} else {
+				printf("Message type not recognized\n");
+				break;
+			}
 		}
 
 		// Compute self position & speed
@@ -643,8 +572,6 @@ int main(){
 		update_position();
 
 		update_self_motion(msl,msr);
-		inbuffer = (char*) wb_receiver_get_data(receiver);
-		sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
 
 		speed[robot_id][0] = (1/DELTA_T)*(loc[robot_id][0]-prev_loc[robot_id][0]);
 		speed[robot_id][1] = (1/DELTA_T)*(loc[robot_id][1]-prev_loc[robot_id][1]);
@@ -736,8 +663,9 @@ int main(){
 		// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
 		/*Implement your code here*/
 		if (INTER_VEHICLE_COM) {
-			sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
-			wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
+			sprintf(outbuffer, "%s#%d#%f#%f#%f#%d", DATA_MESSAGE, robot_id, loc[robot_id][0], loc[robot_id][1], loc[robot_id][2], isthere);
+			wb_emitter_send(emitter, outbuffer, strlen(outbuffer));
+
 		}
 
 		// Continue one step
