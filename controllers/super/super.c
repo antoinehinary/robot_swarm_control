@@ -22,6 +22,8 @@
 #define V_MAX 0.1288          // Maximum speed of a robot
 #define D_MAX 0.5           // Maximum distance per timestep
 
+#define INIT_MESSAGE 0
+
 WbNodeRef robs[FLOCK_SIZE];      // Robots nodes
 WbFieldRef robs_trans[FLOCK_SIZE]; // Robots translation fields
 WbFieldRef robs_rotation[FLOCK_SIZE]; // Robots rotation fields
@@ -214,7 +216,7 @@ void send_init_poses(void) {
         prev_loc[i][1] = loc[i][1];
 
         // Send initial position and migration vector to robots
-        sprintf(buffer, "%1d#%f#%f#%f##%f#%f", i, loc[i][0], loc[i][1], loc[i][2], migrx, migry);
+        sprintf(buffer, "%1d#%f#%f#%f##%f#%f#%1d", i, loc[i][0], loc[i][1], loc[i][2], migrx, migry, INIT_MESSAGE);
         wb_emitter_send(emitter, buffer, strlen(buffer));
     }
 

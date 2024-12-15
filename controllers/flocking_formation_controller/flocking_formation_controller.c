@@ -47,6 +47,8 @@
 #define degToRad(angleInDegrees) ((angleInDegrees) * M_PI / 180.0)
 #define radToDeg(angleInRadians) ((angleInRadians) * 180.0 / M_PI)
 
+#define DATA_MESSAGE 1
+
 #define USE_IMU
 
 WbDeviceTag left_motor; //handler for left wheel of the robot
@@ -69,6 +71,7 @@ float final_migration[2] = {4.2, 1.7}; // Migration vector
 int arrived[FLOCK_SIZE] = {0,0,0,0,0}; // 1 if robot has arrived at 0.4 switching to laplace
 double z_ang_vel;
 double X_next[FLOCK_SIZE][2];
+int message_type;
 
 // Laplace matrix
 double L[FLOCK_SIZE][FLOCK_SIZE] = {
@@ -430,7 +433,7 @@ void initial_pos(void){
 		while (wb_receiver_get_queue_length(receiver) == 0)	wb_robot_step(TIME_STEP);
 		
 		inbuffer = (char*) wb_receiver_get_data(receiver);
-		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f",&rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1]);
+		sscanf(inbuffer,"%d#%f#%f#%f##%f#%f#%d", &rob_nb,&rob_x,&rob_y,&rob_theta, &migr[0], &migr[1],&message_type);
 		// Only info about self will be taken into account at first.
 
     	// robot_nb %= FLOCK_SIZE;
@@ -442,6 +445,7 @@ void initial_pos(void){
 			prev_loc[rob_nb][0] = loc[rob_nb][0];
 			prev_loc[rob_nb][1] = loc[rob_nb][1];
 			initialized[rob_nb] = 1; 		// initialized = true
+			printf("Robot %d initialized with message type %d\n", robot_id, message_type);
 		}		
 		wb_receiver_next_packet(receiver);
 	}
@@ -498,7 +502,8 @@ int main(){
 		while (wb_receiver_get_queue_length(receiver) > 0 && count < FLOCK_SIZE) 
 		{
 			inbuffer = (char*) wb_receiver_get_data(receiver);
-			sscanf(inbuffer,"%d#%f#%f#%f#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere);
+			sscanf(inbuffer,"%d#%f#%f#%f#%d#%d",&rob_nb,&rob_x,&rob_y,&rob_theta, &isthere, &message_type);
+			// printf("Robot %d received message type %d\n", robot_id, message_type);
 			
 			rob_nb %= FLOCK_SIZE;
 			if (initialized[rob_nb] == 0) {
@@ -627,7 +632,7 @@ int main(){
 	// Send current position to neighbors, uncomment for I15, don't forget to add the declaration of "outbuffer" at the begining of this function.
 	/*Implement your code here*/
 	if (INTER_VEHICLE_COM) {
-		sprintf(outbuffer,"%1d#%f#%f#%f#%d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere);
+		sprintf(outbuffer,"%1d#%f#%f#%f#%d#%1d",robot_id,loc[robot_id][0],loc[robot_id][1], loc[robot_id][2], isthere, DATA_MESSAGE);
 		wb_emitter_send(emitter,outbuffer,strlen(outbuffer));
 	}
 
