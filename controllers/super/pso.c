@@ -44,7 +44,7 @@ char label2[20];
 /* max:         maximum initial value of particle element                    */
 /* iterations:  number of iterations to run in the optimization              */
 /* n_datasize:  number of elements in particle                               */
-double* pso(int n_swarmsize, int n_nb, double lweight, double nbweight, double vmax, double min, double max, int iterations, int n_datasize, int n_robots) {
+double* pso(int n_swarmsize, int n_nb, double lweight, double nbweight, double vmax, double min, double max, int iterations, int n_datasize, int n_robots, int state) {
   double swarm[n_swarmsize][n_datasize];    // Swarm of particles
   double perf[n_swarmsize];                 // Current local performance of swarm
   double lbest[n_swarmsize][n_datasize];    // Current best local swarm
@@ -101,7 +101,7 @@ double* pso(int n_swarmsize, int n_nb, double lweight, double nbweight, double v
 #if VERBOSE == 1
   printf("****** Swarm initialized\n");
 #endif
-
+//-------------------------------début optimisation--------------------------------------------------------
   // Run optimization
   for (k = 0; k < iterations; k++) {
 
@@ -119,13 +119,15 @@ double* pso(int n_swarmsize, int n_nb, double lweight, double nbweight, double v
         /* >>>>>>>>>>>>> YOUR CODE GOES HERE <<<<<<<<<<<<<< */
         v[i][j] *= 0.6;
         v[i][j] += lweight*rnd()*(lbest[i][j] - swarm[i][j]) + nbweight*rnd()*(gbest[i][j] - swarm[i][j]);
-          
-        
 
         // Move particles
         /* >>>>>>>>>>>>> YOUR CODE GOES HERE <<<<<<<<<<<<<< */
         swarm[i][j] += v[i][j];
-
+        if (swarm[i][j] < min) {
+            swarm[i][j]= min;  // If v is less than the minimum, return min
+        } else if (swarm[i][j] > max) {
+            swarm[i][j]=max;  // If v is greater than the maximum, return max
+        }
       }
     }
 
@@ -145,6 +147,8 @@ double* pso(int n_swarmsize, int n_nb, double lweight, double nbweight, double v
 #endif
 
   }
+
+  //-----------------------------fin optimisation PSO-------------------------------------------- 
 
   // Find best result achieved
   double* best;
@@ -177,7 +181,6 @@ void findPerformance(double swarm[swarmsize][datasize], double perf[swarmsize],
   double particles[robots][datasize];
   double fit[robots];
   int i,j,k;                   // FOR-loop counters
-
   for (i = 0; i < swarmsize; i+=robots) { //divide the swarm into groups of robots=1 here =5 pour Project
     for (j=0;j<robots && i+j<swarmsize;j++) {
       sprintf(label2,"Particle: %d\n", i+j);
@@ -279,6 +282,18 @@ double s(double v) {
   else
     return 1.0/(1.0 + exp(-1*v));
 }
+
+double limit(double v, double min, double max) { //limiter les valeurs de v
+    if (v > 5)
+        return max; // Upper limit
+    else if (v < -5)
+        return min; // Lower limit
+    else {
+        // Sigmoid calculation, scaled to [min, max]
+        return min + (max - min) / (1.0 + exp(-1 * v));
+    }
+}
+
 
 
 // Find the best result found, set best to the particle, and return the performance

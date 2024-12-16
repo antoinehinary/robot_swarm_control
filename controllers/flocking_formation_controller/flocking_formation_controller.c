@@ -518,7 +518,7 @@ int main(){
 				RULE1_WEIGHT = rob_x;
 				RULE2_WEIGHT = rob_y;
 				RULE3_WEIGHT = rob_theta;
-				printf("Robot %d received weights : %f, %f, %f\n", robot_id, RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
+				//printf("Robot %d received weights : %f, %f, %f\n", robot_id, RULE1_WEIGHT, RULE2_WEIGHT, RULE3_WEIGHT);
 			}
 
 			rob_nb %= FLOCK_SIZE;

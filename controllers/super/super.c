@@ -35,10 +35,10 @@
 // PSO Definitions
 #define SWARMSIZE 10        // Swarm size
 
-#define ITS 20              // Number of iterations for PSO
+#define ITS 50           // Number of iterations for PSO
 #define LWEIGHT 2.0         // Local weight for PSO
 #define NBWEIGHT 2.0        // Neighborhood weight for PSO
-#define VMAX 2.0            // Maximum velocity in PSO
+#define VMAX 20.0            // Maximum velocity in PSO
 #define MININIT 0.001         // Minimum weight value
 #define MAXINIT 0.1         // Maximum weight value
 
@@ -403,8 +403,8 @@ int main(int argc, char *args[]) {
 
     int time = 0;
     int iteration = 0;
-    weights = pso(SWARMSIZE, 1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
-    
+    weights = pso(SWARMSIZE, 1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE, state); //1=NB neighboorhood à checker
+
     while (wb_robot_step(TIME_STEP) != -1 && iteration < MAX_ITER) {
     
         // for (int i = 0; i < DATASIZE; i++) {
@@ -502,25 +502,48 @@ int main(int argc, char *args[]) {
 // Distribute fitness functions among FLOCK_SIZE
 void calc_fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], int its, int numRobs) {
     double buffer[1024];
+    double fit_total = 0.0;
 
     sprintf(buffer, "%1d#%f#%f#%f#%f#%1d", 9, weights[0][0], weights[0][1], weights[0][2], 0.0, WEIGHT_MESSAGE);
     wb_emitter_send(emitter, buffer, strlen(buffer));
-    
-    // Compute the metrics based on the current state
-    if (state == 0 || state == 2) { // Reynold mode
-        o_t = calculate_orientation();
-        d_t = calculate_distance(); // Original Reynold distance metric
-        v_t = calculate_velocity(); // Original Reynold velocity metric
-        m_fl_t = o_t * d_t * v_t;   // Reynold's metric includes orientation
-    } else { // Laplace mode
-        d_t = calculate_distance_laplace(); // New Laplace distance metric
-        v_t = calculate_velocity_laplace(); // New Laplace velocity metric
-        m_fl_t = d_t * v_t;                 // Laplace's metric excludes orientation
-    }
+    printf("weights sent from super\n");
 
+    int evaluation_duration_steps = (int)(3.0 / (TIME_STEP / 1000.0));
+    //printf("evaluation_duration_steps: %d\n", evaluation_duration_steps);
+     // 3 seconds -> lasisser tourner avant évaluation fitness
+    for (int i = 0; i < evaluation_duration_steps; i++) {
+        //printf("iterations step: %d\n", i);
+        wb_robot_step(TIME_STEP);
+        for (int i = 0; i < FLOCK_SIZE; i++) {
+                loc[i][0] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[0]; // X
+                loc[i][1] = wb_supervisor_field_get_sf_vec3f(robs_trans[i])[1]; // Y
+                loc[i][2] = wb_supervisor_field_get_sf_rotation(robs_rotation[i])[3] *
+                            sign(wb_supervisor_field_get_sf_rotation(robs_rotation[i])[2]); // THETA
+        }
+        // Compute the metrics based on the current state
+        if (state == 0 || state == 2) { // Reynold mode
+            o_t = calculate_orientation();
+            d_t = calculate_distance(); // Original Reynold distance metric
+            v_t = calculate_velocity(); // Original Reynold velocity metric
+            m_fl_t = o_t * d_t * v_t;   // Reynold's metric includes orientation
+            //printf("m_fl_t: %f\n", m_fl_t);
+            fit_total += m_fl_t;
+
+        } else { // Laplace mode
+            d_t = calculate_distance_laplace(); // New Laplace distance metric
+            v_t = calculate_velocity_laplace(); // New Laplace velocity metric
+            m_fl_t = d_t * v_t;                 // Laplace's metric excludes orientation
+        }
+        update_previous_positions();
+
+    }
+    fit_total /= evaluation_duration_steps;
     for(int i = 0; i < FLOCK_SIZE; i++) {
-        fit[i] = m_fl_t;
+        fit[i] = fit_total;
     }    
+    printf("------------------------fit_total: %f\n", fit_total);
+
+   
 }
 
 void fitness(double weights[FLOCK_SIZE][DATASIZE], double fit[FLOCK_SIZE], int neighbors[SWARMSIZE][SWARMSIZE]) {
