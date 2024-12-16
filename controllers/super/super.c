@@ -403,7 +403,7 @@ int main(int argc, char *args[]) {
 
     int time = 0;
     int iteration = 0;
-    weights = pso(SWARMSIZE, 1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
+    // weights = pso(SWARMSIZE, 1, LWEIGHT, NBWEIGHT, VMAX, MININIT, MAXINIT,ITS,DATASIZE, FLOCK_SIZE); //1=NB neighboorhood à checker
     
     while (wb_robot_step(TIME_STEP) != -1 && iteration < MAX_ITER) {
     
